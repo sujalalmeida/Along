@@ -2,7 +2,7 @@ import AppKit
 
 @MainActor
 final class FocusBorderWindow {
-    private let panel: NSPanel = {
+    private lazy var panel: NSPanel = {
         let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false; panel.backgroundColor = .clear
         panel.ignoresMouseEvents = true; panel.hasShadow = false
@@ -12,8 +12,9 @@ final class FocusBorderWindow {
         return panel
     }()
     func show(frame: CGRect) {
-        panel.setFrame(frame.insetBy(dx: -2, dy: -2), display: true)
-        panel.orderFrontRegardless()
+        let target = frame.insetBy(dx: -2, dy: -2)
+        if panel.frame != target { panel.setFrame(target, display: true) }
+        if !panel.isVisible { panel.orderFrontRegardless() }
     }
     func hide() { panel.orderOut(nil) }
 }

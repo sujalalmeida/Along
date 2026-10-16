@@ -79,13 +79,21 @@ The scripts also handle two mismatched Command Line Tools files I ran into durin
 
 Issues and pull requests are welcome. If an app behaves oddly, include your macOS version, the app name, and what you did just before it happened. Window sizing rules vary between apps, so a small reproducible example helps.
 
+## Performance
+
+Navigation reuses the known row instead of enumerating every app on each key press. Repeated arrow presses are combined into a bounded pending move, so input isn't silently dropped while an animation runs. Position animation uses elapsed time and respects macOS Reduce Motion.
+
+While a row is active, TileMe checks focus every 300 ms and reconciles the full window list every two seconds, with extra checks for app lifecycle changes and newly focused windows. The row timer is stopped while paused. Closed-window references are removed after successful enumeration, and the menu panel and setup view are released when closed.
+
+For everyday use, build with `CONFIGURATION=release ./Scripts/build-app.sh`. These changes reduce repeated work; memory and switching latency still depend on the number of windows and how quickly their apps respond to Accessibility requests.
+
 ## Things to know
 
 TileMe manages one display and the current Space at a time. Changing Spaces or the display configuration stops the row and attempts to restore your windows. Separate rows for each display and Space aren't supported yet.
 
 Full-screen, minimized, hidden, and non-resizable windows stay out of the active row. Some apps enforce minimum widths or restrict off-screen placement; TileMe reports those constraints in its menu.
 
-Window positions are kept in memory while TileMe runs. Use **Stop Row & Restore Windows** or **Quit & Restore Windows** when you're done. A force-quit or crash can't restore them, and windows that are still minimized or full-screen are left alone.
+Window positions are kept in memory while TileMe runs. Use **Stop & restore windows** or **Quit TileMe** when you're done. A force-quit or crash can't restore them, and windows that are still minimized or full-screen are left alone.
 
 Shortcuts are fixed, and gaps are 12 points. Custom shortcuts, exclusions, saved rows, and adjustable gaps aren't available yet.
 
@@ -113,7 +121,7 @@ This can happen after rebuilding an ad-hoc signed app; the enabled entry may bel
 
 ### 2. Start a row
 
-Close setup, move your pointer onto the display you want to use, and press **Control+Option+P**. You can also choose **Start Scrolling Row** from TileMe's menu bar icon.
+Close setup, move your pointer onto the display you want to use, and press **Control+Option+P**. You can also choose **Start scrolling row** from TileMe's menu bar icon.
 
 Normal windows on that display join the row. Open another app or window and it will join after the selected column. The row starts only when you ask it to.
 
@@ -129,12 +137,12 @@ Normal windows on that display join the row. Open another app or window and it w
 
 Width cycles through roughly one-third, half, two-thirds, and the full usable display width. You can also resize a window manually; the row picks up its new width.
 
-Clicking or switching to a managed window brings it into view. The menu shows your position in the row and any shortcut or placement problems. Modified trackpad scrolling may also reach the app underneath it.
+Clicking or switching to a managed window brings it into view. Click the menu bar icon to open the control panel. It shows your position in the row, previous/next controls, width cycling, and any shortcut or placement problems. Modified trackpad scrolling may also reach the app underneath it.
 
 ### 4. Stop and restore
 
-Press **Control+Option+P** again, or choose **Stop Row & Restore Windows**. TileMe restores the positions it saved when the windows joined the row.
+Press **Control+Option+P** again, or choose **Stop & restore windows**. TileMe restores the positions it saved when the windows joined the row.
 
-To close TileMe entirely, choose **Quit & Restore Windows** from its menu. Closing the setup window only dismisses setup.
+To close TileMe entirely, choose **Quit TileMe** from its menu. Closing the setup window only dismisses setup.
 
 If you want TileMe to launch when you log in, add the installed app under **System Settings → General → Login Items**. You'll still start the row yourself with **Control+Option+P**.

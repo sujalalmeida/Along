@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let permissions = PermissionManager()
     private let row = RowController()
     private var terminating = false
@@ -30,6 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        menuBar?.presentPanel()
+        return false
+    }
+
     func applicationDidBecomeActive(_ notification: Notification) {
         permissions.refresh()
     }
@@ -50,12 +55,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissionTask?.cancel()
     }
 
+    func windowWillClose(_ notification: Notification) {
+        if let window = notification.object as? NSWindow, window === onboarding { onboarding = nil }
+    }
+
     private func showOnboarding() {
         permissions.refresh()
         if onboarding == nil {
             let controller = NSHostingController(rootView: PermissionView(permissions: permissions, row: row))
             let window = NSWindow(contentViewController: controller)
             window.title = "TileMe Setup"
+            window.delegate = self
             window.styleMask = [.titled, .closable, .miniaturizable]
             window.isReleasedWhenClosed = false
             window.center()

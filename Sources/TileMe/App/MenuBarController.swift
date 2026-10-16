@@ -1,59 +1,42 @@
 import AppKit
-import Combine
+import SwiftUI
 
 @MainActor
-final class MenuBarController: NSObject, NSMenuDelegate {
+final class MenuBarController: NSObject, NSPopoverDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let popover = NSPopover()
     private let permissions: PermissionManager
     private let row: RowController
     private let showOnboarding: () -> Void
-    private let status = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private let toggleItem = NSMenuItem(title: "Start Scrolling Row", action: nil, keyEquivalent: "p")
-    private var actions: [NSMenuItem] = []
-    private var subscriptions: Set<AnyCancellable> = []
 
     init(permissions: PermissionManager, row: RowController, showOnboarding: @escaping () -> Void) {
         self.permissions = permissions; self.row = row; self.showOnboarding = showOnboarding
         super.init()
-        statusItem.button?.image = NSImage(systemSymbolName: "rectangle.split.3x1", accessibilityDescription: "TileMe Scrolling Row")
+        statusItem.button?.image = NSImage(systemSymbolName: "rectangle.split.3x1", accessibilityDescription: "TileMe")
         statusItem.button?.image?.isTemplate = true
-        let menu = NSMenu(); menu.delegate = self; menu.autoenablesItems = false
-        let heading = NSMenuItem(title: "TileMe · Scrolling Windows", action: nil, keyEquivalent: "")
-        heading.isEnabled = false; menu.addItem(heading)
-        status.isEnabled = false; menu.addItem(status); menu.addItem(.separator())
-        toggleItem.action = #selector(toggle); toggleItem.target = self
-        toggleItem.keyEquivalentModifierMask = [.control, .option]
-        menu.addItem(toggleItem)
-        actions.append(add("Previous Window", #selector(previous), key: String(UnicodeScalar(NSLeftArrowFunctionKey)!), to: menu))
-        actions.append(add("Next Window", #selector(next), key: String(UnicodeScalar(NSRightArrowFunctionKey)!), to: menu))
-        actions.append(add("Cycle Window Width", #selector(resize), key: "r", to: menu))
-        menu.addItem(.separator())
-        let swipe = NSMenuItem(title: "Navigate: ⌃⌥ + horizontal trackpad scroll", action: nil, keyEquivalent: "")
-        swipe.isEnabled = false; menu.addItem(swipe)
-        menu.addItem(.separator())
-        _ = add("Setup & Permissions…", #selector(setup), to: menu)
-        _ = add("Quit & Restore Windows", #selector(quit), to: menu)
-        statusItem.menu = menu
-        row.$message.sink { [weak self] value in self?.status.title = value; self?.statusItem.button?.toolTip = value }.store(in: &subscriptions)
-        row.$enabled.sink { [weak self] value in self?.toggleItem.title = value ? "Stop Row & Restore Windows" : "Start Scrolling Row" }.store(in: &subscriptions)
+        statusItem.button?.toolTip = "TileMe — Scrolling windows"
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(togglePanel)
+        popover.behavior = .transient
+        popover.animates = false
+        popover.delegate = self
     }
-    private func add(_ title: String, _ action: Selector, key: String = "", to menu: NSMenu) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
-        item.target = self; item.keyEquivalentModifierMask = [.control, .option]; menu.addItem(item)
-        return item
+    func presentPanel() {
+        if !popover.isShown { togglePanel() }
     }
-    func menuWillOpen(_ menu: NSMenu) {
+
+    @objc private func togglePanel() {
+        if popover.isShown { popover.performClose(nil); return }
+        guard let button = statusItem.button else { return }
         permissions.refresh()
-        toggleItem.isEnabled = !row.busy && (permissions.isTrusted || row.enabled)
-        for item in actions { item.isEnabled = row.enabled && !row.busy }
-        if !row.shortcutWarning.isEmpty { status.title = row.shortcutWarning }
-        else if !permissions.isTrusted { status.title = "Grant Accessibility access in Setup" }
-        else { status.title = row.message }
+        row.rememberTargetApplication()
+        popover.contentViewController = NSHostingController(rootView: MenuBarPanel(permissions: permissions, row: row,
+            setup: { [weak self] in self?.popover.performClose(nil); self?.showOnboarding() },
+            quit: { NSApplication.shared.terminate(nil) }))
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
-    @objc private func toggle() { row.toggle() }
-    @objc private func previous() { row.send(.step(-1)) }
-    @objc private func next() { row.send(.step(1)) }
-    @objc private func resize() { row.send(.resize) }
-    @objc private func setup() { showOnboarding() }
-    @objc private func quit() { NSApplication.shared.terminate(nil) }
+    func popoverDidClose(_ notification: Notification) {
+        // Release SwiftUI's view graph when the panel is not in use.
+        popover.contentViewController = nil
+    }
 }

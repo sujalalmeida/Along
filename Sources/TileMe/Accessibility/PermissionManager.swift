@@ -15,7 +15,8 @@ final class PermissionManager: ObservableObject {
     }
 
     func refresh() {
-        isTrusted = AXIsProcessTrusted()
+        let trusted = AXIsProcessTrusted()
+        if trusted != isTrusted { isTrusted = trusted }
     }
 
     func requestAccess() {

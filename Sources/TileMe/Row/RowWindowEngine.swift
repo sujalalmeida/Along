@@ -7,16 +7,19 @@ struct RowSnapshot: Sendable {
     let visible: [VisibleWindow]
     let frontmostPID: pid_t?
     let eligiblePIDs: Set<pid_t>
+    var runningPIDs: Set<pid_t> = []
+    var reduceMotion = false
 }
 struct RowResult: Sendable {
     let message: String
     var focusedPID: pid_t? = nil
     var focusedFrame: CGRect? = nil
+    var needsScan = false
 }
 
 /// AX objects and the row are confined to one worker. No AX calls block the UI.
 final class RowWindowEngine: @unchecked Sendable {
-    enum Command: Sendable { case sync, step(Int), resize, stop }
+    enum Command: Sendable { case sync, focus, step(Int), resize, stop }
     private struct Record {
         let id: Int
         let pid: pid_t
@@ -28,7 +31,7 @@ final class RowWindowEngine: @unchecked Sendable {
     private let queue = DispatchQueue(label: "io.tileme.row", qos: .userInitiated)
     private var records: [Record] = []
     private var row = ScrollingRow()
-    private var originals: [(window: AXUIElement, frame: CGRect)] = []
+    private var originals: [(pid: pid_t, window: AXUIElement, frame: CGRect)] = []
     private var nextID = 1
     private var viewport = CGRect.zero
     private var needsRelayout = false
@@ -37,7 +40,10 @@ final class RowWindowEngine: @unchecked Sendable {
 
     func run(_ command: Command, snapshot: RowSnapshot, viewport: CGRect) async -> RowResult {
         await withCheckedContinuation { continuation in
-            queue.async { continuation.resume(returning: self.execute(command, snapshot: snapshot, viewport: viewport)) }
+            queue.async {
+                let result = autoreleasepool { self.execute(command, snapshot: snapshot, viewport: viewport) }
+                continuation.resume(returning: result)
+            }
         }
     }
     private func read(_ window: AXUIElement, _ key: String) -> CFTypeRef? {
@@ -61,10 +67,12 @@ final class RowWindowEngine: @unchecked Sendable {
         return AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &position) == .success && position.boolValue &&
                AXUIElementIsAttributeSettable(window, kAXSizeAttribute as CFString, &size) == .success && size.boolValue
     }
-    @discardableResult private func place(_ window: AXUIElement, _ rect: CGRect) -> Bool {
+    @discardableResult private func place(_ window: AXUIElement, _ rect: CGRect, from current: CGRect? = nil) -> Bool {
+        if let current, close(current, rect) { return true }
         var size = rect.size; var point = rect.origin
         guard let s = AXValueCreate(.cgSize, &size), let p = AXValueCreate(.cgPoint, &point) else { return false }
-        let resize = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, s)
+        let resize: AXError = current.map { abs($0.width - rect.width) < 1 && abs($0.height - rect.height) < 1 } == true
+            ? .success : AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, s)
         let move = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, p)
         return resize == .success && move == .success
     }
@@ -85,59 +93,81 @@ final class RowWindowEngine: @unchecked Sendable {
         var dirty = self.viewport != viewport || needsRelayout
         needsRelayout = false
         self.viewport = viewport
-        let pids = Set(snapshot.visible.map(\.pid) + records.map(\.pid))
-        var alive = Set<Int>()
-        var focusedID: Int?
         var transientFailure = false
-        for pid in pids.sorted() where snapshot.eligiblePIDs.contains(pid) {
-            let app = AXUIElementCreateApplication(pid)
-            AXUIElementSetMessagingTimeout(app, 0.15)
-            guard let windows = read(app, kAXWindowsAttribute) as? [AXUIElement] else {
-                // A transient AX timeout must not discard original frames.
-                alive.formUnion(records.filter { $0.pid == pid }.map(\.id))
-                transientFailure = true
-                continue
-            }
-            let focused = pid == snapshot.frontmostPID ? read(app, kAXFocusedWindowAttribute) : nil
-            for window in windows {
-                AXUIElementSetMessagingTimeout(window, 0.15)
-                let known = records.firstIndex { CFEqual($0.window, window) }
-                guard let rect = frame(window) else {
-                    if let known { alive.insert(records[known].id) }
+        if case .sync = command {
+            originals.removeAll { !snapshot.runningPIDs.contains($0.pid) }
+            let pids = Set(snapshot.visible.map(\.pid) + records.map(\.pid) + originals.map(\.pid))
+            var alive = Set<Int>()
+            var focusedID: Int?
+            for pid in pids.sorted() where snapshot.eligiblePIDs.contains(pid) {
+                let app = AXUIElementCreateApplication(pid)
+                AXUIElementSetMessagingTimeout(app, 0.15)
+                guard let windows = read(app, kAXWindowsAttribute) as? [AXUIElement] else {
+                    // A transient AX timeout must not discard original frames.
+                    alive.formUnion(records.filter { $0.pid == pid }.map(\.id))
+                    transientFailure = true
                     continue
                 }
-                guard movable(window) else {
-                    // Leave minimized/full-screen windows alone and remove them from the active row.
-                    continue
+                // Only prune after a successful enumeration; a timeout is not a closed window.
+                originals.removeAll { original in
+                    original.pid == pid && !windows.contains { CFEqual($0, original.window) }
                 }
-                let id: Int
-                if let known {
-                    id = records[known].id
-                    if let applied = records[known].lastApplied, abs(applied.width - rect.width) > 3 {
-                        row.resize(id: id, width: rect.width)
+                let focused = pid == snapshot.frontmostPID ? read(app, kAXFocusedWindowAttribute) : nil
+                for window in windows {
+                    AXUIElementSetMessagingTimeout(window, 0.15)
+                    let known = records.firstIndex { CFEqual($0.window, window) }
+                    guard let rect = frame(window) else {
+                        if let known { alive.insert(records[known].id) }
+                        continue
+                    }
+                    guard movable(window) else {
+                        // Leave minimized/full-screen windows alone and remove them from the active row.
+                        continue
+                    }
+                    let id: Int
+                    if let known {
+                        id = records[known].id
+                        if let applied = records[known].lastApplied, abs(applied.width - rect.width) > 3 {
+                            row.resize(id: id, width: rect.width)
+                            dirty = true
+                        }
+                        records[known].lastApplied = rect
+                    } else {
+                        guard snapshot.visible.contains(where: { $0.pid == pid && close($0.frame, rect) }),
+                              rect.intersection(viewport).width > 0, rect.intersection(viewport).height > 0 else { continue }
+                        id = nextID; nextID += 1
+                        let title = read(window, kAXTitleAttribute) as? String ?? "Window"
+                        let original = originals.first(where: { CFEqual($0.window, window) })?.frame ?? rect
+                        if !originals.contains(where: { CFEqual($0.window, window) }) { originals.append((pid, window, rect)) }
+                        records.append(Record(id: id, pid: pid, window: window, original: original, title: title))
+                        row.insert(id: id, width: min(rect.width, viewport.width))
                         dirty = true
                     }
-                } else {
-                    guard snapshot.visible.contains(where: { $0.pid == pid && close($0.frame, rect) }),
-                          rect.intersection(viewport).width > 0, rect.intersection(viewport).height > 0 else { continue }
-                    id = nextID; nextID += 1
-                    let title = read(window, kAXTitleAttribute) as? String ?? "Window"
-                    let original = originals.first(where: { CFEqual($0.window, window) })?.frame ?? rect
-                    if !originals.contains(where: { CFEqual($0.window, window) }) { originals.append((window, rect)) }
-                    records.append(Record(id: id, pid: pid, window: window, original: original, title: title))
-                    row.insert(id: id, width: min(rect.width, viewport.width))
-                    dirty = true
+                    alive.insert(id)
+                    if let focused, CFEqual(focused, window) { focusedID = id }
                 }
-                alive.insert(id)
-                if let focused, CFEqual(focused, window) { focusedID = id }
+            }
+            for record in records where !alive.contains(record.id) { row.remove(id: record.id); dirty = true }
+            records.removeAll { !alive.contains($0.id) }
+            if let focusedID, focusedID != lastFocused {
+                row.focus(id: focusedID); dirty = true
+            }
+            lastFocused = focusedID
+        }
+        var focusChanged = false
+        if case .focus = command, let pid = snapshot.frontmostPID {
+            let app = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(app, 0.1)
+            if let focused = read(app, kAXFocusedWindowAttribute) {
+                guard let known = records.first(where: { CFEqual($0.window, focused) }) else {
+                    return RowResult(message: "Updating windows…", needsScan: true)
+                }
+                if lastFocused != known.id {
+                    row.focus(id: known.id); lastFocused = known.id
+                    dirty = true; focusChanged = true
+                }
             }
         }
-        for record in records where !alive.contains(record.id) { row.remove(id: record.id); dirty = true }
-        records.removeAll { !alive.contains($0.id) }
-        if let focusedID, focusedID != lastFocused {
-            row.focus(id: focusedID); dirty = true
-        }
-        lastFocused = focusedID
         var raise = false
         switch command {
         case .step(let direction): row.step(direction); dirty = true; raise = true
@@ -147,33 +177,43 @@ final class RowWindowEngine: @unchecked Sendable {
                 row.resize(id: id, width: widths.first(where: { $0 > column.width + 15 }) ?? widths[0])
                 dirty = true
             }
-        case .sync, .stop: break
+        case .sync, .focus, .stop: break
         }
         let targets = row.layout(in: viewport)
         var constrained = 0
         if dirty {
-            if raise {
-                let starts = Dictionary(uniqueKeysWithValues: records.compactMap { record in
-                    frame(record.window).map { (record.id, $0) }
-                })
-                for tick in 1...5 {
-                    let t = CGFloat(tick) / 5
-                    let eased = t * t * (3 - 2 * t)
-                    for record in records {
-                        guard let start = starts[record.id], let target = targets[record.id] else { continue }
-                        var point = CGPoint(x: start.minX + (target.minX - start.minX) * eased,
-                                            y: start.minY + (target.minY - start.minY) * eased)
-                        if let value = AXValueCreate(.cgPoint, &point) {
-                            AXUIElementSetAttributeValue(record.window, kAXPositionAttribute as CFString, value)
+            if (raise || focusChanged) && !snapshot.reduceMotion {
+                let moving = records.compactMap { record -> (AXUIElement, CGRect, CGRect)? in
+                    guard let start = record.lastApplied, let target = targets[record.id],
+                          abs(start.minX - target.minX) > 1 || abs(start.minY - target.minY) > 1,
+                          start.intersects(viewport) || target.intersects(viewport) else { return nil }
+                    return (record.window, start, target)
+                }
+                if !moving.isEmpty {
+                    let startTime = ProcessInfo.processInfo.systemUptime
+                    let duration = 0.16
+                    // Elapsed-time interpolation skips frames if an app responds slowly.
+                    while true {
+                        let elapsed = ProcessInfo.processInfo.systemUptime - startTime
+                        if elapsed >= duration { break }
+                        let t = CGFloat(elapsed / duration)
+                        let eased = t * t * (3 - 2 * t)
+                        for (window, start, target) in moving {
+                            var point = CGPoint(x: start.minX + (target.minX - start.minX) * eased,
+                                                y: start.minY + (target.minY - start.minY) * eased)
+                            if let value = AXValueCreate(.cgPoint, &point) {
+                                AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
+                            }
                         }
+                        let spent = ProcessInfo.processInfo.systemUptime - startTime - elapsed
+                        if spent < 1.0 / 60 { Thread.sleep(forTimeInterval: 1.0 / 60 - spent) }
                     }
-                    Thread.sleep(forTimeInterval: 0.016)
                 }
             }
             // Place offscreen columns first so the selected window can be raised last.
             for index in records.indices {
                 guard let target = targets[records[index].id] else { continue }
-                if !place(records[index].window, target) { constrained += 1 }
+                if !place(records[index].window, target, from: records[index].lastApplied) { constrained += 1 }
                 let actual = frame(records[index].window)
                 if let actual, !close(actual, target) { constrained += 1 }
                 if let actual, abs(actual.width - target.width) > 3 {
