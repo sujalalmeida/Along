@@ -8,6 +8,12 @@ final class PermissionManager: ObservableObject {
     @Published private(set) var isTrusted = AXIsProcessTrusted()
     @Published private(set) var settingsError: String?
 
+    var runningAppPath: String { Bundle.main.bundleURL.path }
+
+    func revealRunningApp() {
+        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+    }
+
     func refresh() {
         isTrusted = AXIsProcessTrusted()
     }

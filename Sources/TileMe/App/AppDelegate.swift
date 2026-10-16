@@ -4,16 +4,20 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let permissions = PermissionManager()
+    private let row = RowController()
+    private var terminating = false
     private var menuBar: MenuBarController?
     private var onboarding: NSWindow?
     private var permissionTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        menuBar = MenuBarController(permissions: permissions) { [weak self] in
+        menuBar = MenuBarController(permissions: permissions, row: row) { [weak self] in
             self?.showOnboarding()
         }
+        row.startMonitoring()
         let hasLaunched = UserDefaults.standard.bool(forKey: "hasLaunched")
-        if !hasLaunched || !permissions.isTrusted { showOnboarding() }
+        if !hasLaunched || !permissions.isTrusted || !UserDefaults.standard.bool(forKey: "rowOnboardingSeen") { showOnboarding() }
+        UserDefaults.standard.set(true, forKey: "rowOnboardingSeen")
         UserDefaults.standard.set(true, forKey: "hasLaunched")
 
         // A cancellable async timer keeps UI state current without blocking the run loop.
@@ -32,6 +36,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if terminating { return .terminateLater }
+        terminating = true
+        Task {
+            await row.shutdown()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         permissionTask?.cancel()
     }
@@ -39,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showOnboarding() {
         permissions.refresh()
         if onboarding == nil {
-            let controller = NSHostingController(rootView: PermissionView(permissions: permissions))
+            let controller = NSHostingController(rootView: PermissionView(permissions: permissions, row: row))
             let window = NSWindow(contentViewController: controller)
             window.title = "TileMe Setup"
             window.styleMask = [.titled, .closable, .miniaturizable]
