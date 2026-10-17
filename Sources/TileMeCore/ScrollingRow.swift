@@ -36,7 +36,21 @@ public struct ScrollingRow: Sendable {
         guard width.isFinite, width > 0, let index = columns.firstIndex(where: { $0.id == id }) else { return }
         columns[index].width = width
     }
-    public mutating func layout(in viewport: CGRect, gap: CGFloat = 12) -> [Int: CGRect] {
+    public mutating func scroll(by delta: CGFloat, in viewport: CGRect, gap: CGFloat = 12) {
+        guard delta.isFinite else { return }
+        let total = columns.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, columns.count - 1)) * gap
+        offset = min(max(0, offset + delta), max(0, total - viewport.width))
+        var cursor: CGFloat = 0
+        let center = offset + viewport.width / 2
+        var nearest = CGFloat.infinity
+        for column in columns {
+            let distance = abs(cursor + column.width / 2 - center)
+            if distance < nearest { nearest = distance; focusedID = column.id }
+            cursor += column.width + gap
+        }
+    }
+
+    public mutating func layout(in viewport: CGRect, gap: CGFloat = 12, revealFocus: Bool = true) -> [Int: CGRect] {
         let spacing = max(0, gap.isFinite ? gap : 0)
         var starts: [Int: CGFloat] = [:]
         var cursor: CGFloat = 0
@@ -45,7 +59,7 @@ public struct ScrollingRow: Sendable {
             cursor += column.width + spacing
         }
         let total = max(0, cursor - spacing)
-        if let focus = columns.first(where: { $0.id == focusedID }), let start = starts[focus.id] {
+        if revealFocus, let focus = columns.first(where: { $0.id == focusedID }), let start = starts[focus.id] {
             if start < offset { offset = start }
             if start + focus.width > offset + viewport.width { offset = start + focus.width - viewport.width }
             if focus.width > viewport.width { offset = start }

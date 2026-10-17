@@ -14,3 +14,13 @@ Checked on the development Mac on 2026-10-16.
 The old running app showed 14,176 KiB RSS in one sample after an extended session. The new release showed 64,912 KiB RSS five seconds after launch with setup loaded. These are different states and are not a valid before/after memory comparison. A total-memory reduction has **not** been established. Releasing views and obsolete window references limits retention but does not force macOS or SwiftUI to return cached pages immediately.
 
 The rebuilt executable needs refreshed Accessibility permission. Live navigation latency, active-row CPU, restoration, and a controlled repeated open/close memory test are still pending that refresh. Do not treat successful model tests as proof of live AX behavior.
+
+## Live follow-up after permission refresh
+
+The current build was re-added through System Settings after user authentication. TileMe displayed “Accessibility access granted.” The control panel admitted three windows into the row, and stopping through the panel displayed “Row stopped. Original positions restored.” The session was left paused. The runtime reported application/macOS placement constraints. Navigation was exercised, but no controlled switching-latency measurement was obtained. Total-memory savings and peak-memory behavior remain unproven; isolated RSS samples from different session states should not be compared as a benchmark.
+
+## Motion update — 0.5.0
+
+The focus-outline window was removed, along with the Active/Paused status badge. Modified trackpad scrolling now applies continuous deltas to the viewport and settles to a nearby column after input pauses. Keyboard motion uses a critically damped curve with velocity continuity; a thread-safe revision counter lets fresh input interrupt the worker's animation. Interrupted motion records its actual position before the next command, avoiding the old final jump to an obsolete destination. The animation clock follows the selected display's refresh rate, capped at 120 Hz, and skips missed samples. Reduce Motion remains supported.
+
+All 24 model tests passed, including continuity at retargeting, settling accuracy, fractional scroll movement, scroll boundaries, and nearest-column selection. Live perceived smoothness still depends on application AX latency and must be evaluated with the rebuilt app's Accessibility access enabled.

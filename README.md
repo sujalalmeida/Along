@@ -14,7 +14,6 @@ TileMe lives in the menu bar. There's no Dock icon and no separate desktop to wo
 
 - Move between windows with the keyboard or trackpad.
 - Change one window's width without resizing its neighbors.
-- Follow the orange outline to see which window is selected.
 - Stop the row to return windows to their original positions.
 
 ## Build it
@@ -63,7 +62,7 @@ The main pieces are:
 | `Sources/TileMe/Row/` | Window discovery, focus, placement, and restoration |
 | `Sources/TileMe/Input/` | Global keyboard shortcuts |
 | `Sources/TileMe/Accessibility/` | Permission handling and Accessibility API access |
-| `Sources/TileMe/UI/` | Setup window and focus outline |
+| `Sources/TileMe/UI/` | Setup and menu bar panel |
 | `Sources/TileMe/App/` | App lifecycle and menu bar controls |
 | `Tests/TileMeCoreTests/` | Row and geometry tests |
 
@@ -81,7 +80,7 @@ Issues and pull requests are welcome. If an app behaves oddly, include your macO
 
 ## Performance
 
-Navigation reuses the known row instead of enumerating every app on each key press. Repeated arrow presses are combined into a bounded pending move, so input isn't silently dropped while an animation runs. Position animation uses elapsed time and respects macOS Reduce Motion.
+Navigation reuses the known row instead of enumerating every app on each key press. Repeated arrow presses are combined into a bounded pending move, so input isn't silently dropped while an animation runs. Keyboard navigation uses interruptible spring motion. New input retargets from the current position and velocity instead of finishing an old movement first. Motion follows the display refresh rate, up to 120 Hz, and respects macOS Reduce Motion.
 
 While a row is active, TileMe checks focus every 300 ms and reconciles the full window list every two seconds, with extra checks for app lifecycle changes and newly focused windows. The row timer is stopped while paused. Closed-window references are removed after successful enumeration, and the menu panel and setup view are released when closed.
 
@@ -137,7 +136,7 @@ Normal windows on that display join the row. Open another app or window and it w
 
 Width cycles through roughly one-third, half, two-thirds, and the full usable display width. You can also resize a window manually; the row picks up its new width.
 
-Clicking or switching to a managed window brings it into view. Click the menu bar icon to open the control panel. It shows your position in the row, previous/next controls, width cycling, and any shortcut or placement problems. Modified trackpad scrolling may also reach the app underneath it.
+Trackpad scrolling moves the row continuously with your gesture and settles on a nearby window when you stop. Clicking or switching to a managed window brings it into view. Click the menu bar icon to open the control panel. It shows your position in the row, previous/next controls, width cycling, and any shortcut or placement problems. Modified trackpad scrolling may also reach the app underneath it.
 
 ### 4. Stop and restore
 

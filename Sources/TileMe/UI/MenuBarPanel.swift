@@ -18,12 +18,7 @@ struct MenuBarPanel: View {
                     Text("Room for every window").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                HStack(spacing: 5) {
-                    Circle().fill(row.enabled ? .green : .secondary).frame(width: 6, height: 6)
-                    Text(row.enabled ? "Active" : "Paused").font(.caption.weight(.medium))
-                }
-                .padding(.horizontal, 9).padding(.vertical, 5)
-                .background(.primary.opacity(0.05), in: Capsule())
+
             }
             VStack(alignment: .leading, spacing: 10) {
                 Text(row.enabled ? "YOUR ROW" : "READY WHEN YOU ARE")

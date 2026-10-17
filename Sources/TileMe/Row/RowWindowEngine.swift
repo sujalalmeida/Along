@@ -9,17 +9,16 @@ struct RowSnapshot: Sendable {
     let eligiblePIDs: Set<pid_t>
     var runningPIDs: Set<pid_t> = []
     var reduceMotion = false
+    var refreshRate = 60
 }
 struct RowResult: Sendable {
     let message: String
-    var focusedPID: pid_t? = nil
-    var focusedFrame: CGRect? = nil
     var needsScan = false
 }
 
 /// AX objects and the row are confined to one worker. No AX calls block the UI.
 final class RowWindowEngine: @unchecked Sendable {
-    enum Command: Sendable { case sync, focus, step(Int), resize, stop }
+    enum Command: Sendable { case sync, focus, step(Int), scroll(CGFloat), settle, resize, stop }
     private struct Record {
         let id: Int
         let pid: pid_t
@@ -28,6 +27,9 @@ final class RowWindowEngine: @unchecked Sendable {
         var lastApplied: CGRect?
         var title: String
     }
+    private let motion = MotionInterruption()
+    private var velocities: [Int: CGVector] = [:]
+    func interruptMotion() { motion.interrupt() }
     private let queue = DispatchQueue(label: "io.tileme.row", qos: .userInitiated)
     private var records: [Record] = []
     private var row = ScrollingRow()
@@ -39,9 +41,10 @@ final class RowWindowEngine: @unchecked Sendable {
     private var lastFocused: Int?
 
     func run(_ command: Command, snapshot: RowSnapshot, viewport: CGRect) async -> RowResult {
-        await withCheckedContinuation { continuation in
+        let revision = motion.current()
+        return await withCheckedContinuation { continuation in
             queue.async {
-                let result = autoreleasepool { self.execute(command, snapshot: snapshot, viewport: viewport) }
+                let result = autoreleasepool { self.execute(command, snapshot: snapshot, viewport: viewport, revision: revision) }
                 continuation.resume(returning: result)
             }
         }
@@ -79,14 +82,14 @@ final class RowWindowEngine: @unchecked Sendable {
     private func close(_ a: CGRect, _ b: CGRect) -> Bool {
         abs(a.minX - b.minX) < 3 && abs(a.minY - b.minY) < 3 && abs(a.width - b.width) < 3 && abs(a.height - b.height) < 3
     }
-    private func execute(_ command: Command, snapshot: RowSnapshot, viewport: CGRect) -> RowResult {
+    private func execute(_ command: Command, snapshot: RowSnapshot, viewport: CGRect, revision: UInt64) -> RowResult {
         if case .stop = command {
             var failures = 0
             for record in originals where frame(record.window) != nil && movable(record.window) {
                 if !place(record.window, record.frame) { failures += 1 }
             }
             records.removeAll(); originals.removeAll(); row = ScrollingRow(); lastFocused = nil
-            needsRelayout = false; placementConstrained = false
+            needsRelayout = false; placementConstrained = false; velocities.removeAll()
             return RowResult(message: failures == 0 ? "Row stopped. Original positions restored." : "Row stopped; \(failures) windows refused restoration.")
         }
         guard AXIsProcessTrusted() else { return RowResult(message: "Accessibility permission is required.") }
@@ -169,8 +172,12 @@ final class RowWindowEngine: @unchecked Sendable {
             }
         }
         var raise = false
+        var directScroll = false
         switch command {
         case .step(let direction): row.step(direction); dirty = true; raise = true
+        case .scroll(let delta):
+            row.scroll(by: delta, in: viewport); dirty = true; directScroll = true
+        case .settle: dirty = true; raise = true
         case .resize:
             if let id = row.focusedID, let column = row.columns.first(where: { $0.id == id }) {
                 let widths = [viewport.width / 3, (viewport.width - 12) / 2, viewport.width * 2 / 3, viewport.width]
@@ -179,42 +186,54 @@ final class RowWindowEngine: @unchecked Sendable {
             }
         case .sync, .focus, .stop: break
         }
-        let targets = row.layout(in: viewport)
+        let targets = row.layout(in: viewport, revealFocus: !directScroll)
         var constrained = 0
         if dirty {
+            var interrupted = false
             if (raise || focusChanged) && !snapshot.reduceMotion {
-                let moving = records.compactMap { record -> (AXUIElement, CGRect, CGRect)? in
-                    guard let start = record.lastApplied, let target = targets[record.id],
-                          abs(start.minX - target.minX) > 1 || abs(start.minY - target.minY) > 1,
+                let moving = records.compactMap { record -> (Int, AXUIElement, CGRect, CGRect, CGVector)? in
+                    guard let target = targets[record.id], let start = frame(record.window),
+                          abs(start.minX - target.minX) > 0.5 || abs(start.minY - target.minY) > 0.5,
                           start.intersects(viewport) || target.intersects(viewport) else { return nil }
-                    return (record.window, start, target)
+                    return (record.id, record.window, start, target, velocities[record.id] ?? .zero)
                 }
                 if !moving.isEmpty {
                     let startTime = ProcessInfo.processInfo.systemUptime
-                    let duration = 0.16
-                    // Elapsed-time interpolation skips frames if an app responds slowly.
+                    let fps = Double(min(120, max(30, snapshot.refreshRate)))
                     while true {
+                        if motion.current() != revision { interrupted = true; break }
                         let elapsed = ProcessInfo.processInfo.systemUptime - startTime
-                        if elapsed >= duration { break }
-                        let t = CGFloat(elapsed / duration)
-                        let eased = t * t * (3 - 2 * t)
-                        for (window, start, target) in moving {
-                            var point = CGPoint(x: start.minX + (target.minX - start.minX) * eased,
-                                                y: start.minY + (target.minY - start.minY) * eased)
+                        if elapsed >= WindowMotion.duration { break }
+                        for (id, window, start, target, velocity) in moving {
+                            if motion.current() != revision { interrupted = true; break }
+                            let x = WindowMotion.sample(from: start.minX, to: target.minX, velocity: velocity.dx, elapsed: elapsed)
+                            let y = WindowMotion.sample(from: start.minY, to: target.minY, velocity: velocity.dy, elapsed: elapsed)
+                            var point = CGPoint(x: x.position, y: y.position)
                             if let value = AXValueCreate(.cgPoint, &point) {
                                 AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
                             }
+                            velocities[id] = CGVector(dx: x.velocity, dy: y.velocity)
                         }
-                        let spent = ProcessInfo.processInfo.systemUptime - startTime - elapsed
-                        if spent < 1.0 / 60 { Thread.sleep(forTimeInterval: 1.0 / 60 - spent) }
+                        if interrupted { break }
+                        // Schedule against the animation clock, skipping missed frames.
+                        let now = ProcessInfo.processInfo.systemUptime - startTime
+                        let next = (floor(now * fps) + 1) / fps
+                        Thread.sleep(forTimeInterval: max(0, next - now))
                     }
                 }
             }
+            if interrupted {
+                // Keep actual in-flight positions. The pending command retargets from here
+                // instead of snapping to an obsolete destination before starting again.
+                for index in records.indices { records[index].lastApplied = frame(records[index].window) }
+                return RowResult(message: "Moving through row…")
+            }
+            velocities.removeAll(keepingCapacity: true)
             // Place offscreen columns first so the selected window can be raised last.
             for index in records.indices {
                 guard let target = targets[records[index].id] else { continue }
-                if !place(records[index].window, target, from: records[index].lastApplied) { constrained += 1 }
-                let actual = frame(records[index].window)
+                if !place(records[index].window, target, from: directScroll ? records[index].lastApplied : frame(records[index].window)) { constrained += 1 }
+                let actual = directScroll ? target : frame(records[index].window)
                 if let actual, !close(actual, target) { constrained += 1 }
                 if let actual, abs(actual.width - target.width) > 3 {
                     row.resize(id: records[index].id, width: actual.width)
@@ -237,7 +256,6 @@ final class RowWindowEngine: @unchecked Sendable {
         }
         let index = (row.columns.firstIndex { $0.id == focus.id } ?? 0) + 1
         let suffix = placementConstrained ? " · Some positions constrained by macOS/app" : transientFailure ? " · An app is not responding" : ""
-        return RowResult(message: "\(index) of \(row.columns.count) · \(focus.title)\(suffix)",
-                         focusedPID: focus.pid, focusedFrame: frame(focus.window))
+        return RowResult(message: "\(index) of \(row.columns.count) · \(focus.title)\(suffix)")
     }
 }

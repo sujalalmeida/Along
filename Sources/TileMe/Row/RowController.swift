@@ -10,7 +10,6 @@ final class RowController: ObservableObject {
     @Published private(set) var message = "Start a scrolling row on the current display"
     @Published private(set) var shortcutWarning = ""
     private let engine = RowWindowEngine()
-    private let border = FocusBorderWindow()
     private let hotkeys = HotkeyManager()
     private var timer: Task<Void, Never>?
     private var monitor: Any?
@@ -26,13 +25,15 @@ final class RowController: ObservableObject {
         return pid == ProcessInfo.processInfo.processIdentifier ? panelTargetPID : pid
     }
     private var pending = NavigationBuffer()
+    private var pendingScroll: CGFloat = 0
+    private var pendingSettle = false
+    private var scrollTask: Task<Void, Never>?
+    private var displayRefreshRate = 60
     private var pendingResize = false
     private var pendingSync = false
     private var cachedSnapshot: RowSnapshot?
     private var lastScan = Date.distantPast
     private var viewport = CGRect.zero
-    private var scrollAmount: CGFloat = 0
-    private var lastSwipe = Date.distantPast
 
     func startMonitoring() {
         hotkeys.onAction = { [weak self] id in
@@ -51,13 +52,15 @@ final class RowController: ObservableObject {
             MainActor.assumeIsolated {
                 guard let self, self.enabled,
                       event.modifierFlags.intersection([.control, .option]) == [.control, .option],
-                      abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY),
-                      event.momentumPhase.isEmpty else { return }
-                if event.phase == .began { self.scrollAmount = 0 }
-                self.scrollAmount += event.scrollingDeltaX
-                if abs(self.scrollAmount) >= 35 && Date().timeIntervalSince(self.lastSwipe) > 0.25 {
-                    self.send(.step(self.scrollAmount < 0 ? 1 : -1))
-                    self.scrollAmount = 0; self.lastSwipe = Date()
+                      abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return }
+                let delta = -event.scrollingDeltaX * (event.hasPreciseScrollingDeltas ? 1 : 12)
+                self.send(.scroll(delta))
+                self.scrollTask?.cancel()
+                self.scrollTask = Task { [weak self] in
+                    do { try await Task.sleep(for: .milliseconds(140)) } catch { return }
+                    guard let self else { return }
+                    self.send(.settle)
+                    self.scrollTask = nil
                 }
             }
         }
@@ -92,7 +95,8 @@ final class RowController: ObservableObject {
         }
         return RowSnapshot(visible: visible, frontmostPID: targetPID,
                            eligiblePIDs: eligible, runningPIDs: Set(apps.map(\.processIdentifier)),
-                           reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+                           reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+                           refreshRate: displayRefreshRate)
     }
     func toggle() {
         if enabled { Task { await stop() }; return }
@@ -101,12 +105,14 @@ final class RowController: ObservableObject {
         guard let primary = NSScreen.screens.first else { return }
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? primary
+        displayRefreshRate = min(120, max(30, screen.maximumFramesPerSecond))
         viewport = ScreenGeometry.flip(screen.visibleFrame.insetBy(dx: 12, dy: 12), primaryMaxY: primary.frame.maxY)
         enabled = true
         timer = Task { [weak self] in
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
                 guard let self, enabled else { return }
+                guard scrollTask == nil else { continue }
                 send(Date().timeIntervalSince(lastScan) >= 2 ? .sync : .focus)
             }
         }
@@ -114,9 +120,14 @@ final class RowController: ObservableObject {
     }
     func send(_ command: RowWindowEngine.Command) {
         guard enabled else { return }
+        if case .scroll = command { pendingSettle = false }
         if busy {
             switch command {
-            case .step(let direction): pending.add(direction)
+            case .step(let direction): pending.add(direction); engine.interruptMotion()
+            case .scroll(let delta):
+                pendingScroll = min(10000, max(-10000, pendingScroll + delta))
+                engine.interruptMotion()
+            case .settle: pendingSettle = true
             case .resize: pendingResize = true
             case .sync: pendingSync = true
             default: break
@@ -135,20 +146,20 @@ final class RowController: ObservableObject {
             state = RowSnapshot(visible: cachedSnapshot.visible,
                                 frontmostPID: targetPID,
                                 eligiblePIDs: cachedSnapshot.eligiblePIDs, runningPIDs: cachedSnapshot.runningPIDs,
-                                reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+                                reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+                           refreshRate: displayRefreshRate)
         } else { state = snapshot() }
-        if case .step = command { border.hide() }
         Task {
             let result = await engine.run(command, snapshot: state, viewport: viewport)
             if enabled {
                 if message != result.message { message = result.message }
-                if let rect = result.focusedFrame, let primary = NSScreen.screens.first,
-                   result.focusedPID == NSWorkspace.shared.frontmostApplication?.processIdentifier {
-                    border.show(frame: ScreenGeometry.flip(rect, primaryMaxY: primary.frame.maxY))
-                } else { border.hide() }
                 busy = false
                 let steps = pending.take()
                 if steps != 0 { send(.step(steps)) }
+                else if abs(pendingScroll) > 0.01 {
+                    let delta = pendingScroll; pendingScroll = 0; send(.scroll(delta))
+                }
+                else if pendingSettle { pendingSettle = false; send(.settle) }
                 else if pendingResize { pendingResize = false; send(.resize) }
                 else if pendingSync || (result.needsScan && Date().timeIntervalSince(lastScan) > 0.4) {
                     pendingSync = false; send(.sync)
@@ -162,7 +173,9 @@ final class RowController: ObservableObject {
         timer?.cancel(); timer = nil
         pending = NavigationBuffer(); pendingResize = false; pendingSync = false
         cachedSnapshot = nil
-        border.hide()
+        scrollTask?.cancel(); scrollTask = nil
+        pendingScroll = 0; pendingSettle = false
+        engine.interruptMotion()
         // The engine serializes restoration behind any in-flight layout operation.
         busy = true
         let result = await engine.run(.stop, snapshot: snapshot(), viewport: viewport)
