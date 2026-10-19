@@ -52,13 +52,15 @@ Output goes into `dist/TileMe-<version>-apple-silicon/`. Packaging builds a sepa
 
 TileMe manages one display and the current Space at a time. Changing Spaces or display configuration stops the row and attempts restoration. Full-screen, hidden, minimized, and non-resizable windows stay out of the active row. Some apps constrain window size or off-screen placement.
 
-Shortcuts are fixed; gaps are 12 points. Saved rows and app exclusions aren't available yet. Window positions are kept in memory, so a force-quit or crash can't restore them. Windows that remain minimized or full-screen are left alone when stopping.
+Shortcuts are fixed; gaps are 12 points. Saved rows and app exclusions aren't available yet. Window positions are kept in memory, so a force-quit or crash can't restore them. Windows that remain minimized or full-screen are left alone when stopping; their saved positions remain available for a retry while TileMe stays open.
 
 TileMe uses macOS Accessibility APIs. It doesn't capture your screen, use private window-server APIs, or send window data to a server.
 
-Issues and pull requests are welcome. Include your macOS version, app name, and steps to reproduce a problem. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Issues and pull requests are welcome. Include your macOS version, app name, and steps to reproduce a problem. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [architecture notes](docs/ARCHITECTURE.md).
 
 ## License
+
+TileMe is an independent implementation. It is not affiliated with TileMyMac.
 
 [MIT](LICENSE). Use it, change it, or build something else from it. The icon is original artwork included under the same license.
 
@@ -81,7 +83,7 @@ Width cycles through roughly one-third, half, two-thirds, and full display width
 
 ### Stop, update, and uninstall
 
-Choose **Stop & restore windows** to pause. Choose **Quit TileMe** before replacing the app in Applications or moving it to the Trash. Closing setup only dismisses that window.
+Choose **Stop & restore windows** to pause. If an app refuses restoration, unminimize its windows or check Accessibility access, then choose **Retry restoring windows**. TileMe keeps the saved positions until restoration succeeds or you quit. Choose **Quit TileMe** before replacing the app in Applications or moving it to the Trash. Closing setup only dismisses that window.
 
 If you want TileMe at login, add it in System Settings → General → Login Items. Starting the row is still manual.
 

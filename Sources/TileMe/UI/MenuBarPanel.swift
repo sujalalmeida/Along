@@ -24,11 +24,17 @@ struct MenuBarPanel: View {
                 Text(row.enabled ? "YOUR ROW" : "READY WHEN YOU ARE")
                     .font(.system(size: 10, weight: .semibold)).tracking(1.2).foregroundStyle(.secondary)
                 Text(permissions.isTrusted ? row.message : "Allow Accessibility access to arrange your windows.")
-                    .font(.callout).lineLimit(3).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                    .font(.callout).lineLimit(3).fixedSize(horizontal: false, vertical: true).frame(
+                        maxWidth: .infinity, alignment: .leading)
                 Button(action: { permissions.isTrusted ? row.toggle() : setup() }) {
                     HStack {
-                        Image(systemName: permissions.isTrusted ? (row.enabled ? "pause.fill" : "play.fill") : "lock.open")
-                        Text(permissions.isTrusted ? (row.enabled ? "Stop & restore windows" : "Start scrolling row") : "Enable Accessibility")
+                        Image(
+                            systemName: permissions.isTrusted ? (row.enabled ? "pause.fill" : "play.fill") : "lock.open"
+                        )
+                        Text(
+                            permissions.isTrusted
+                                ? (row.enabled ? "Stop & restore windows" : "Start scrolling row")
+                                : "Enable Accessibility")
                         Spacer()
                         if permissions.isTrusted { Text("⌃⌥P").font(.caption.monospaced()).opacity(0.7) }
                     }.padding(.vertical, 5).frame(maxWidth: .infinity)
@@ -37,12 +43,18 @@ struct MenuBarPanel: View {
                 .disabled(row.busy && !row.enabled)
             }
             .padding(14).background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
+            if !row.enabled && row.pendingRestorations > 0 {
+                Button("Retry restoring windows") { Task { await row.stop() } }
+                    .disabled(row.busy)
+            }
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
                     navigation("Previous", icon: "arrow.left", shortcut: "⌃⌥←", direction: -1)
                     navigation("Next", icon: "arrow.right", shortcut: "⌃⌥→", direction: 1)
                 }
-                Button { row.send(.resize) } label: {
+                Button {
+                    row.send(.resize)
+                } label: {
                     HStack {
                         Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right")
                         Text("Cycle window width")
@@ -68,9 +80,15 @@ struct MenuBarPanel: View {
         .padding(20).frame(width: 340)
     }
     private func navigation(_ title: String, icon: String, shortcut: String, direction: Int) -> some View {
-        Button { row.send(.step(direction)) } label: {
+        Button {
+            row.send(.step(direction))
+        } label: {
             VStack(alignment: .leading, spacing: 12) {
-                HStack { Image(systemName: icon); Spacer(); Text(shortcut).font(.caption.monospaced()).foregroundStyle(.secondary) }
+                HStack {
+                    Image(systemName: icon)
+                    Spacer()
+                    Text(shortcut).font(.caption.monospaced()).foregroundStyle(.secondary)
+                }
                 Text(title).font(.callout.weight(.medium))
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
                 .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 9))

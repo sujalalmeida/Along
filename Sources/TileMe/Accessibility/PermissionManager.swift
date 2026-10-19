@@ -25,8 +25,10 @@ final class PermissionManager: ObservableObject {
     }
 
     func openSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
-        settingsError = NSWorkspace.shared.open(url)
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        else { return }
+        settingsError =
+            NSWorkspace.shared.open(url)
             ? nil
             : "Open System Settings → Privacy & Security → Accessibility manually."
     }

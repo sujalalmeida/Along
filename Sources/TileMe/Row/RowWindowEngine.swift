@@ -1,8 +1,12 @@
 import ApplicationServices
 import Foundation
+import OSLog
 import TileMeCore
 
-struct VisibleWindow: Sendable { let pid: pid_t; let frame: CGRect }
+struct VisibleWindow: Sendable {
+    let pid: pid_t
+    let frame: CGRect
+}
 struct RowSnapshot: Sendable {
     let visible: [VisibleWindow]
     let frontmostPID: pid_t?
@@ -14,19 +18,31 @@ struct RowSnapshot: Sendable {
 struct RowResult: Sendable {
     let message: String
     var needsScan = false
+    var pendingRestorations = 0
 }
 
 /// AX objects and the row are confined to one worker. No AX calls block the UI.
 final class RowWindowEngine: @unchecked Sendable {
-    enum Command: Sendable { case sync, focus, step(Int), scroll(CGFloat), settle, resize, stop }
+    enum Command: Sendable {
+        case sync, focus
+        case step(Int)
+        case scroll(CGFloat)
+        case settle, resize, stop
+    }
     private struct Record {
         let id: Int
         let pid: pid_t
         let window: AXUIElement
-        let original: CGRect
         var lastApplied: CGRect?
         var title: String
     }
+    private let accessibility: any WindowAccessibility
+    private let logger = Logger(subsystem: "io.tileme.app", category: "WindowAccess")
+
+    init(accessibility: any WindowAccessibility = SystemWindowAccessibility()) {
+        self.accessibility = accessibility
+    }
+
     private let motion = MotionInterruption()
     private var velocities: [Int: CGVector] = [:]
     func interruptMotion() { motion.interrupt() }
@@ -38,146 +54,292 @@ final class RowWindowEngine: @unchecked Sendable {
     private var viewport = CGRect.zero
     private var needsRelayout = false
     private var placementConstrained = false
+    private var unavailable = Set<Int>()
     private var lastFocused: Int?
 
     func run(_ command: Command, snapshot: RowSnapshot, viewport: CGRect) async -> RowResult {
         let revision = motion.current()
         return await withCheckedContinuation { continuation in
             queue.async {
-                let result = autoreleasepool { self.execute(command, snapshot: snapshot, viewport: viewport, revision: revision) }
+                let result = autoreleasepool {
+                    self.execute(command, snapshot: snapshot, viewport: viewport, revision: revision)
+                }
                 continuation.resume(returning: result)
             }
         }
     }
-    private func read(_ window: AXUIElement, _ key: String) -> CFTypeRef? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, key as CFString, &value) == .success else { return nil }
-        return value
-    }
-    private func frame(_ window: AXUIElement) -> CGRect? {
-        guard let p = read(window, kAXPositionAttribute), CFGetTypeID(p) == AXValueGetTypeID(),
-              let s = read(window, kAXSizeAttribute), CFGetTypeID(s) == AXValueGetTypeID() else { return nil }
-        var point = CGPoint.zero; var size = CGSize.zero
-        guard AXValueGetValue(p as! AXValue, .cgPoint, &point), AXValueGetValue(s as! AXValue, .cgSize, &size),
-              point.x.isFinite, point.y.isFinite, size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return nil }
-        return CGRect(origin: point, size: size)
-    }
-    private func movable(_ window: AXUIElement) -> Bool {
-        guard read(window, kAXSubroleAttribute) as? String == kAXStandardWindowSubrole,
-              read(window, kAXMinimizedAttribute) as? Bool != true,
-              read(window, "AXFullScreen") as? Bool != true else { return false }
-        var position = DarwinBoolean(false); var size = DarwinBoolean(false)
-        return AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &position) == .success && position.boolValue &&
-               AXUIElementIsAttributeSettable(window, kAXSizeAttribute as CFString, &size) == .success && size.boolValue
-    }
-    @discardableResult private func place(_ window: AXUIElement, _ rect: CGRect, from current: CGRect? = nil) -> Bool {
-        if let current, close(current, rect) { return true }
-        var size = rect.size; var point = rect.origin
-        guard let s = AXValueCreate(.cgSize, &size), let p = AXValueCreate(.cgPoint, &point) else { return false }
-        let resize: AXError = current.map { abs($0.width - rect.width) < 1 && abs($0.height - rect.height) < 1 } == true
-            ? .success : AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, s)
-        let move = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, p)
-        return resize == .success && move == .success
-    }
-    private func close(_ a: CGRect, _ b: CGRect) -> Bool {
-        abs(a.minX - b.minX) < 3 && abs(a.minY - b.minY) < 3 && abs(a.width - b.width) < 3 && abs(a.height - b.height) < 3
-    }
-    private func execute(_ command: Command, snapshot: RowSnapshot, viewport: CGRect, revision: UInt64) -> RowResult {
-        if case .stop = command {
-            var failures = 0
-            for record in originals where frame(record.window) != nil && movable(record.window) {
-                if !place(record.window, record.frame) { failures += 1 }
+    /// Preserve failed originals until an explicit retry succeeds. Closed windows
+    /// can be discarded; a timeout, minimized window, or permission loss cannot.
+    private func restore(snapshot: RowSnapshot) -> RowResult {
+        originals.removeAll { !snapshot.runningPIDs.contains($0.pid) }
+        originals = originals.filter { record in
+            do {
+                let current = try accessibility.frame(of: record.window)
+                guard try accessibility.isMovable(record.window) else { return true }
+                try accessibility.place(record.window, at: record.frame, from: current)
+                guard try accessibility.frame(of: record.window).isClose(to: record.frame) else {
+                    throw WindowAccessError.constrained
+                }
+                return false
+            } catch let error as WindowAccessError where error.windowClosed {
+                return false
+            } catch {
+                report(error)
+                return true
             }
-            records.removeAll(); originals.removeAll(); row = ScrollingRow(); lastFocused = nil
-            needsRelayout = false; placementConstrained = false; velocities.removeAll()
-            return RowResult(message: failures == 0 ? "Row stopped. Original positions restored." : "Row stopped; \(failures) windows refused restoration.")
         }
-        guard AXIsProcessTrusted() else { return RowResult(message: "Accessibility permission is required.") }
+        records.removeAll()
+        row = ScrollingRow()
+        lastFocused = nil
+        needsRelayout = false
+        placementConstrained = false
+        unavailable.removeAll()
+        velocities.removeAll()
+        let count = originals.count
+        let windows = count == 1 ? "window" : "windows"
+        return RowResult(
+            message: count == 0
+                ? "Row stopped. Original positions restored."
+                : "Row stopped. \(count) \(windows) still need restoring. Unminimize them or check Accessibility, then retry.",
+            pendingRestorations: count
+        )
+    }
+
+    private func report(_ error: Error) {
+        // Never log window titles, application contents, or user data.
+        logger.debug("Window operation failed: \(String(describing: error), privacy: .public)")
+    }
+
+    private func synchronize(snapshot: RowSnapshot, viewport: CGRect) -> (dirty: Bool, failed: Bool) {
+        var dirty = false
+        var transientFailure = false
+        unavailable.removeAll(keepingCapacity: true)
+        originals.removeAll { !snapshot.runningPIDs.contains($0.pid) }
+        let pids = Set(snapshot.visible.map(\.pid) + records.map(\.pid) + originals.map(\.pid))
+        var alive = Set<Int>()
+        var focusedID: Int?
+        for pid in pids.sorted() where snapshot.eligiblePIDs.contains(pid) {
+            let app = accessibility.application(pid: pid)
+            let windows: [AXUIElement]
+            do { windows = try accessibility.windows(of: app) } catch {
+                report(error)
+                // A transient AX timeout must not discard original frames.
+                let deferred = records.filter { $0.pid == pid }.map(\.id)
+                alive.formUnion(deferred)
+                unavailable.formUnion(deferred)
+                transientFailure = true
+                continue
+            }
+            // Only prune after a successful enumeration; a timeout is not a closed window.
+            originals.removeAll { original in
+                original.pid == pid && !windows.contains { CFEqual($0, original.window) }
+            }
+            var focused: AXUIElement?
+            if pid == snapshot.frontmostPID {
+                do { focused = try accessibility.focusedWindow(of: app) } catch {
+                    report(error)
+                    transientFailure = true
+                }
+            }
+            for window in windows {
+                let known = records.firstIndex { CFEqual($0.window, window) }
+                let rect: CGRect
+                do {
+                    rect = try accessibility.frame(of: window)
+                    guard try accessibility.isMovable(window) else { continue }
+                } catch let error as WindowAccessError where error.windowClosed {
+                    continue
+                } catch {
+                    report(error)
+                    if let known {
+                        alive.insert(records[known].id)
+                        unavailable.insert(records[known].id)
+                    }
+                    transientFailure = true
+                    continue
+                }
+                let id: Int
+                if let known {
+                    id = records[known].id
+                    if let applied = records[known].lastApplied, abs(applied.width - rect.width) > 3 {
+                        row.resize(id: id, width: rect.width)
+                        dirty = true
+                    }
+                    records[known].lastApplied = rect
+                } else {
+                    guard snapshot.visible.contains(where: { $0.pid == pid && $0.frame.isClose(to: rect) }),
+                        rect.intersection(viewport).width > 0, rect.intersection(viewport).height > 0
+                    else { continue }
+                    id = nextID
+                    nextID += 1
+                    // A missing title affects presentation only; geometry must still succeed.
+                    let title = (try? accessibility.title(of: window)) ?? "Window"
+                    if !originals.contains(where: { CFEqual($0.window, window) }) {
+                        originals.append((pid, window, rect))
+                    }
+                    records.append(Record(id: id, pid: pid, window: window, title: title))
+                    row.insert(id: id, width: min(rect.width, viewport.width))
+                    dirty = true
+                }
+                alive.insert(id)
+                if let focused, CFEqual(focused, window) { focusedID = id }
+            }
+        }
+        for record in records where !alive.contains(record.id) {
+            row.remove(id: record.id)
+            dirty = true
+        }
+        records.removeAll { !alive.contains($0.id) }
+        if let focusedID, focusedID != lastFocused {
+            row.focus(id: focusedID)
+            dirty = true
+        }
+        lastFocused = focusedID
+        return (dirty, transientFailure)
+    }
+
+    private struct MotionTarget {
+        let id: Int
+        let window: AXUIElement
+        let start: CGRect
+        let target: CGRect
+        let velocity: CGVector
+    }
+
+    private func animate(targets: [Int: CGRect], viewport: CGRect, refreshRate: Int, revision: UInt64)
+        -> (interrupted: Bool, failed: Bool)
+    {
+        var interrupted = false
+        var failed = false
+        let moving = records.compactMap { record -> MotionTarget? in
+            guard !unavailable.contains(record.id), let target = targets[record.id],
+                let start = try? accessibility.frame(of: record.window),
+                abs(start.minX - target.minX) > 0.5 || abs(start.minY - target.minY) > 0.5,
+                start.intersects(viewport) || target.intersects(viewport)
+            else { return nil }
+            return MotionTarget(
+                id: record.id, window: record.window, start: start, target: target,
+                velocity: velocities[record.id] ?? .zero)
+        }
+        if !moving.isEmpty {
+            let startTime = ProcessInfo.processInfo.systemUptime
+            let fps = Double(min(120, max(30, refreshRate)))
+            while true {
+                if motion.current() != revision {
+                    interrupted = true
+                    break
+                }
+                let elapsed = ProcessInfo.processInfo.systemUptime - startTime
+                if elapsed >= WindowMotion.duration { break }
+                for item in moving {
+                    let (id, window, start, target, velocity) = (
+                        item.id, item.window, item.start, item.target, item.velocity
+                    )
+                    if motion.current() != revision {
+                        interrupted = true
+                        break
+                    }
+                    let x = WindowMotion.sample(
+                        from: start.minX, to: target.minX, velocity: velocity.dx, elapsed: elapsed)
+                    let y = WindowMotion.sample(
+                        from: start.minY, to: target.minY, velocity: velocity.dy, elapsed: elapsed)
+                    do {
+                        try accessibility.move(window, to: CGPoint(x: x.position, y: y.position))
+                        velocities[id] = CGVector(dx: x.velocity, dy: y.velocity)
+                    } catch {
+                        // Stop this animation rather than hammering an unresponsive app
+                        // at display refresh rate. The final placement reports the issue.
+                        report(error)
+                        failed = true
+                        break
+                    }
+                }
+                if interrupted || failed { break }
+                // Schedule against the animation clock, skipping missed frames.
+                let now = ProcessInfo.processInfo.systemUptime - startTime
+                let next = (floor(now * fps) + 1) / fps
+                Thread.sleep(forTimeInterval: max(0, next - now))
+            }
+        }
+        return (interrupted, failed)
+    }
+
+    private func apply(targets: [Int: CGRect], directScroll: Bool) -> Int {
+        var constrained = 0
+        for index in records.indices {
+            guard !unavailable.contains(records[index].id), let target = targets[records[index].id] else {
+                continue
+            }
+            let window = records[index].window
+            do {
+                let current = directScroll ? records[index].lastApplied : try accessibility.frame(of: window)
+                try accessibility.place(window, at: target, from: current)
+                // Direct scrolling avoids a synchronous read per gesture, but only
+                // successful writes may update this optimistic cache.
+                let actual = directScroll ? target : try accessibility.frame(of: window)
+                if !actual.isClose(to: target) { constrained += 1 }
+                if abs(actual.width - target.width) > 3 {
+                    row.resize(id: records[index].id, width: actual.width)
+                    needsRelayout = true
+                }
+                records[index].lastApplied = actual
+            } catch {
+                report(error)
+                constrained += 1
+                records[index].lastApplied = nil
+            }
+        }
+        return constrained
+    }
+
+    private func execute(_ command: Command, snapshot: RowSnapshot, viewport: CGRect, revision: UInt64) -> RowResult {
+        if case .stop = command { return restore(snapshot: snapshot) }
+        guard accessibility.isTrusted else { return RowResult(message: "Accessibility permission is required.") }
+        guard viewport.isUsableWindowFrame else { return RowResult(message: "This display has no usable window area.") }
         var dirty = self.viewport != viewport || needsRelayout
         needsRelayout = false
         self.viewport = viewport
         var transientFailure = false
+
         if case .sync = command {
-            originals.removeAll { !snapshot.runningPIDs.contains($0.pid) }
-            let pids = Set(snapshot.visible.map(\.pid) + records.map(\.pid) + originals.map(\.pid))
-            var alive = Set<Int>()
-            var focusedID: Int?
-            for pid in pids.sorted() where snapshot.eligiblePIDs.contains(pid) {
-                let app = AXUIElementCreateApplication(pid)
-                AXUIElementSetMessagingTimeout(app, 0.15)
-                guard let windows = read(app, kAXWindowsAttribute) as? [AXUIElement] else {
-                    // A transient AX timeout must not discard original frames.
-                    alive.formUnion(records.filter { $0.pid == pid }.map(\.id))
-                    transientFailure = true
-                    continue
-                }
-                // Only prune after a successful enumeration; a timeout is not a closed window.
-                originals.removeAll { original in
-                    original.pid == pid && !windows.contains { CFEqual($0, original.window) }
-                }
-                let focused = pid == snapshot.frontmostPID ? read(app, kAXFocusedWindowAttribute) : nil
-                for window in windows {
-                    AXUIElementSetMessagingTimeout(window, 0.15)
-                    let known = records.firstIndex { CFEqual($0.window, window) }
-                    guard let rect = frame(window) else {
-                        if let known { alive.insert(records[known].id) }
-                        continue
-                    }
-                    guard movable(window) else {
-                        // Leave minimized/full-screen windows alone and remove them from the active row.
-                        continue
-                    }
-                    let id: Int
-                    if let known {
-                        id = records[known].id
-                        if let applied = records[known].lastApplied, abs(applied.width - rect.width) > 3 {
-                            row.resize(id: id, width: rect.width)
-                            dirty = true
-                        }
-                        records[known].lastApplied = rect
-                    } else {
-                        guard snapshot.visible.contains(where: { $0.pid == pid && close($0.frame, rect) }),
-                              rect.intersection(viewport).width > 0, rect.intersection(viewport).height > 0 else { continue }
-                        id = nextID; nextID += 1
-                        let title = read(window, kAXTitleAttribute) as? String ?? "Window"
-                        let original = originals.first(where: { CFEqual($0.window, window) })?.frame ?? rect
-                        if !originals.contains(where: { CFEqual($0.window, window) }) { originals.append((pid, window, rect)) }
-                        records.append(Record(id: id, pid: pid, window: window, original: original, title: title))
-                        row.insert(id: id, width: min(rect.width, viewport.width))
-                        dirty = true
-                    }
-                    alive.insert(id)
-                    if let focused, CFEqual(focused, window) { focusedID = id }
-                }
-            }
-            for record in records where !alive.contains(record.id) { row.remove(id: record.id); dirty = true }
-            records.removeAll { !alive.contains($0.id) }
-            if let focusedID, focusedID != lastFocused {
-                row.focus(id: focusedID); dirty = true
-            }
-            lastFocused = focusedID
+            let discovery = synchronize(snapshot: snapshot, viewport: viewport)
+            dirty = dirty || discovery.dirty
+            transientFailure = discovery.failed
         }
         var focusChanged = false
         if case .focus = command, let pid = snapshot.frontmostPID {
-            let app = AXUIElementCreateApplication(pid)
-            AXUIElementSetMessagingTimeout(app, 0.1)
-            if let focused = read(app, kAXFocusedWindowAttribute) {
+            let app = accessibility.application(pid: pid)
+            let focused: AXUIElement?
+            do { focused = try accessibility.focusedWindow(of: app) } catch {
+                report(error)
+                return RowResult(message: "The active app is not responding. TileMe will try again shortly.")
+            }
+            if let focused {
                 guard let known = records.first(where: { CFEqual($0.window, focused) }) else {
                     return RowResult(message: "Updating windows…", needsScan: true)
                 }
                 if lastFocused != known.id {
-                    row.focus(id: known.id); lastFocused = known.id
-                    dirty = true; focusChanged = true
+                    row.focus(id: known.id)
+                    lastFocused = known.id
+                    dirty = true
+                    focusChanged = true
                 }
             }
         }
         var raise = false
         var directScroll = false
         switch command {
-        case .step(let direction): row.step(direction); dirty = true; raise = true
+        case .step(let direction):
+            row.step(direction)
+            dirty = true
+            raise = true
         case .scroll(let delta):
-            row.scroll(by: delta, in: viewport); dirty = true; directScroll = true
-        case .settle: dirty = true; raise = true
+            row.scroll(by: delta, in: viewport)
+            dirty = true
+            directScroll = true
+        case .settle:
+            dirty = true
+            raise = true
         case .resize:
             if let id = row.focusedID, let column = row.columns.first(where: { $0.id == id }) {
                 let widths = [viewport.width / 3, (viewport.width - 12) / 2, viewport.width * 2 / 3, viewport.width]
@@ -191,71 +353,39 @@ final class RowWindowEngine: @unchecked Sendable {
         if dirty {
             var interrupted = false
             if (raise || focusChanged) && !snapshot.reduceMotion {
-                let moving = records.compactMap { record -> (Int, AXUIElement, CGRect, CGRect, CGVector)? in
-                    guard let target = targets[record.id], let start = frame(record.window),
-                          abs(start.minX - target.minX) > 0.5 || abs(start.minY - target.minY) > 0.5,
-                          start.intersects(viewport) || target.intersects(viewport) else { return nil }
-                    return (record.id, record.window, start, target, velocities[record.id] ?? .zero)
-                }
-                if !moving.isEmpty {
-                    let startTime = ProcessInfo.processInfo.systemUptime
-                    let fps = Double(min(120, max(30, snapshot.refreshRate)))
-                    while true {
-                        if motion.current() != revision { interrupted = true; break }
-                        let elapsed = ProcessInfo.processInfo.systemUptime - startTime
-                        if elapsed >= WindowMotion.duration { break }
-                        for (id, window, start, target, velocity) in moving {
-                            if motion.current() != revision { interrupted = true; break }
-                            let x = WindowMotion.sample(from: start.minX, to: target.minX, velocity: velocity.dx, elapsed: elapsed)
-                            let y = WindowMotion.sample(from: start.minY, to: target.minY, velocity: velocity.dy, elapsed: elapsed)
-                            var point = CGPoint(x: x.position, y: y.position)
-                            if let value = AXValueCreate(.cgPoint, &point) {
-                                AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value)
-                            }
-                            velocities[id] = CGVector(dx: x.velocity, dy: y.velocity)
-                        }
-                        if interrupted { break }
-                        // Schedule against the animation clock, skipping missed frames.
-                        let now = ProcessInfo.processInfo.systemUptime - startTime
-                        let next = (floor(now * fps) + 1) / fps
-                        Thread.sleep(forTimeInterval: max(0, next - now))
-                    }
-                }
+                let animation = animate(
+                    targets: targets, viewport: viewport, refreshRate: snapshot.refreshRate, revision: revision)
+                interrupted = animation.interrupted
+                transientFailure = transientFailure || animation.failed
             }
             if interrupted {
                 // Keep actual in-flight positions. The pending command retargets from here
                 // instead of snapping to an obsolete destination before starting again.
-                for index in records.indices { records[index].lastApplied = frame(records[index].window) }
+                for index in records.indices {
+                    records[index].lastApplied = (try? accessibility.frame(of: records[index].window))
+                }
                 return RowResult(message: "Moving through row…")
             }
             velocities.removeAll(keepingCapacity: true)
-            // Place offscreen columns first so the selected window can be raised last.
-            for index in records.indices {
-                guard let target = targets[records[index].id] else { continue }
-                if !place(records[index].window, target, from: directScroll ? records[index].lastApplied : frame(records[index].window)) { constrained += 1 }
-                let actual = directScroll ? target : frame(records[index].window)
-                if let actual, !close(actual, target) { constrained += 1 }
-                if let actual, abs(actual.width - target.width) > 3 {
-                    row.resize(id: records[index].id, width: actual.width)
-                    needsRelayout = true
-                }
-                records[index].lastApplied = actual ?? target
-            }
+            constrained = apply(targets: targets, directScroll: directScroll)
         }
         if dirty { placementConstrained = constrained > 0 }
         guard let focus = records.first(where: { $0.id == row.focusedID }) else {
             return RowResult(message: "Row ready — open a normal window on this display.")
         }
-        if raise {
-            AXUIElementPerformAction(focus.window, kAXRaiseAction as CFString)
-            let app = AXUIElementCreateApplication(focus.pid)
-            AXUIElementSetMessagingTimeout(app, 0.15)
-            AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
-            AXUIElementSetAttributeValue(app, kAXFocusedWindowAttribute as CFString, focus.window)
-            lastFocused = focus.id
+        if raise && !unavailable.contains(focus.id) {
+            do {
+                try accessibility.focus(focus.window, pid: focus.pid)
+                lastFocused = focus.id
+            } catch {
+                report(error)
+                return RowResult(message: "The selected app could not take focus. Try selecting its window directly.")
+            }
         }
         let index = (row.columns.firstIndex { $0.id == focus.id } ?? 0) + 1
-        let suffix = placementConstrained ? " · Some positions constrained by macOS/app" : transientFailure ? " · An app is not responding" : ""
+        let suffix =
+            placementConstrained
+            ? " · Some positions constrained by macOS/app" : transientFailure ? " · An app is not responding" : ""
         return RowResult(message: "\(index) of \(row.columns.count) · \(focus.title)\(suffix)")
     }
 }

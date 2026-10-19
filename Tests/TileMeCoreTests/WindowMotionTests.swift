@@ -1,5 +1,6 @@
-import Testing
 import CoreGraphics
+import Testing
+
 @testable import TileMeCore
 
 struct WindowMotionTests {
@@ -33,9 +34,11 @@ struct WindowMotionTests {
     }
     @Test func trackpadDeltaMovesRowWithoutSnappingToFocusedWindow() {
         var row = ScrollingRow()
-        row.insert(id: 1, width: 600); row.insert(id: 2, width: 600)
+        row.insert(id: 1, width: 600)
+        row.insert(id: 2, width: 600)
         let viewport = CGRect(x: 12, y: 30, width: 1000, height: 700)
-        row.focus(id: 1); _ = row.layout(in: viewport)
+        row.focus(id: 1)
+        _ = row.layout(in: viewport)
         row.scroll(by: 37.5, in: viewport)
         let frames = row.layout(in: viewport, revealFocus: false)
         #expect(row.offset == 37.5)
@@ -44,7 +47,8 @@ struct WindowMotionTests {
     }
     @Test func scrollingClampsAtBothEnds() {
         var row = ScrollingRow()
-        row.insert(id: 1, width: 600); row.insert(id: 2, width: 600)
+        row.insert(id: 1, width: 600)
+        row.insert(id: 2, width: 600)
         let viewport = CGRect(x: 0, y: 0, width: 1000, height: 700)
         row.scroll(by: 10000, in: viewport)
         #expect(row.offset == 212)

@@ -1,5 +1,6 @@
-import Testing
 import CoreGraphics
+import Testing
+
 @testable import TileMeCore
 
 struct ScrollingRowTests {
@@ -7,8 +8,10 @@ struct ScrollingRowTests {
 
     @Test func insertsAfterActiveWithoutResizingNeighbors() {
         var row = ScrollingRow()
-        row.insert(id: 1, width: 450); row.insert(id: 2, width: 600)
-        row.focus(id: 1); row.insert(id: 3, width: 300)
+        row.insert(id: 1, width: 450)
+        row.insert(id: 2, width: 600)
+        row.focus(id: 1)
+        row.insert(id: 3, width: 300)
         #expect(row.columns.map(\.id) == [1, 3, 2])
         #expect(row.columns.map(\.width) == [450, 300, 600])
         #expect(row.focusedID == 3)
@@ -28,7 +31,8 @@ struct ScrollingRowTests {
     }
     @Test func navigationStopsAtEndsAndKeepsVisibleNeighborsStill() {
         var row = ScrollingRow()
-        row.insert(id: 1, width: 300); row.insert(id: 2, width: 300)
+        row.insert(id: 1, width: 300)
+        row.insert(id: 2, width: 300)
         let before = row.layout(in: viewport)
         #expect(row.step(1) == 2)
         #expect(row.step(-1) == 1)
@@ -37,7 +41,8 @@ struct ScrollingRowTests {
     }
     @Test func closeFocusedWindowSelectsNeighborAndClampsOffset() {
         var row = ScrollingRow()
-        row.insert(id: 1, width: 600); row.insert(id: 2, width: 600)
+        row.insert(id: 1, width: 600)
+        row.insert(id: 2, width: 600)
         _ = row.layout(in: viewport)
         #expect(row.offset > 0)
         row.remove(id: 2)
@@ -50,7 +55,8 @@ struct ScrollingRowTests {
     }
     @Test func resizeOnlyChangesSelectedColumn() {
         var row = ScrollingRow()
-        row.insert(id: 1, width: 400); row.insert(id: 2, width: 500)
+        row.insert(id: 1, width: 400)
+        row.insert(id: 2, width: 500)
         row.resize(id: 1, width: 700)
         #expect(row.columns.map(\.width) == [700, 500])
         row.resize(id: 1, width: .nan)
@@ -58,7 +64,8 @@ struct ScrollingRowTests {
     }
     @Test func oversizedColumnAnchorsLeftAndDuplicateInsertIsIgnored() {
         var row = ScrollingRow()
-        row.insert(id: 1, width: 1500); row.insert(id: 1, width: 100)
+        row.insert(id: 1, width: 1500)
+        row.insert(id: 1, width: 100)
         #expect(row.columns.count == 1)
         #expect(row.layout(in: viewport)[1]!.minX == viewport.minX)
         #expect(row.columns[0].width == 1500)

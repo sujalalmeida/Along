@@ -5,7 +5,10 @@ public struct ScrollingRow: Sendable {
     public struct Column: Equatable, Sendable {
         public let id: Int
         public var width: CGFloat
-        public init(id: Int, width: CGFloat) { self.id = id; self.width = width }
+        public init(id: Int, width: CGFloat) {
+            self.id = id
+            self.width = width
+        }
     }
     public private(set) var columns: [Column] = []
     public private(set) var focusedID: Int?
@@ -28,7 +31,7 @@ public struct ScrollingRow: Sendable {
     }
     @discardableResult public mutating func step(_ direction: Int) -> Int? {
         guard let index = columns.firstIndex(where: { $0.id == focusedID }) else { return nil }
-        let next = min(max(index + direction, 0), columns.count - 1)
+        let next = min(max(index + min(max(direction, -columns.count), columns.count), 0), columns.count - 1)
         focusedID = columns[next].id
         return focusedID
     }
@@ -37,7 +40,8 @@ public struct ScrollingRow: Sendable {
         columns[index].width = width
     }
     public mutating func scroll(by delta: CGFloat, in viewport: CGRect, gap: CGFloat = 12) {
-        guard delta.isFinite else { return }
+        guard delta.isFinite, valid(viewport) else { return }
+        let gap = max(0, gap.isFinite ? gap : 0)
         let total = columns.reduce(CGFloat(0)) { $0 + $1.width } + CGFloat(max(0, columns.count - 1)) * gap
         offset = min(max(0, offset + delta), max(0, total - viewport.width))
         var cursor: CGFloat = 0
@@ -45,12 +49,21 @@ public struct ScrollingRow: Sendable {
         var nearest = CGFloat.infinity
         for column in columns {
             let distance = abs(cursor + column.width / 2 - center)
-            if distance < nearest { nearest = distance; focusedID = column.id }
+            if distance < nearest {
+                nearest = distance
+                focusedID = column.id
+            }
             cursor += column.width + gap
         }
     }
 
+    private func valid(_ viewport: CGRect) -> Bool {
+        viewport.origin.x.isFinite && viewport.origin.y.isFinite && viewport.size.width.isFinite
+            && viewport.size.height.isFinite && viewport.size.width > 0 && viewport.size.height > 0
+    }
+
     public mutating func layout(in viewport: CGRect, gap: CGFloat = 12, revealFocus: Bool = true) -> [Int: CGRect] {
+        guard valid(viewport) else { return [:] }
         let spacing = max(0, gap.isFinite ? gap : 0)
         var starts: [Int: CGFloat] = [:]
         var cursor: CGFloat = 0
@@ -65,9 +78,14 @@ public struct ScrollingRow: Sendable {
             if focus.width > viewport.width { offset = start }
         }
         offset = min(max(0, offset), max(0, total - viewport.width))
-        return Dictionary(uniqueKeysWithValues: columns.map { column in
-            (column.id, CGRect(x: viewport.minX + starts[column.id]! - offset, y: viewport.minY,
-                               width: column.width, height: viewport.height))
-        })
+        return Dictionary(
+            uniqueKeysWithValues: columns.map { column in
+                (
+                    column.id,
+                    CGRect(
+                        x: viewport.minX + starts[column.id]! - offset, y: viewport.minY,
+                        width: column.width, height: viewport.height)
+                )
+            })
     }
 }
