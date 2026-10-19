@@ -1,0 +1,27 @@
+# Local validation — TileMe 0.6.0 preview
+
+Prepared 2026-10-17 on an Apple Silicon Mac running macOS 27.0.1.
+
+Passed:
+
+- All 24 Swift Testing tests.
+- ARM64 optimized compilation with a macOS 13.0 deployment target.
+- Mach-O architecture and minimum-OS inspection.
+- Bundle metadata, original icon, MIT license, and strict ad-hoc signature verification.
+- No dylib dependency paths into a developer home directory, `/opt`, or `/usr/local`.
+- Compressed DMG integrity verification, read-only mounting, Applications shortcut, and embedded installation notes.
+- Signature and architecture checks on the app extracted from the ZIP and mounted from the final DMG.
+- Visual Finder check of app icon, arrow, folder shortcut, background text, and Read Me placement.
+- All generated release-file SHA-256 checksums.
+- Shell syntax checks and `git diff --check`.
+
+Not yet checked:
+
+- Browser-download quarantine and first-launch approval on a different Mac/account.
+- Accessibility onboarding and normal operation of this exact installed artifact on a fresh account.
+- Runtime behavior on macOS 13 and other supported macOS releases.
+- The GitHub Actions workflow, which has been added but has not run on GitHub yet.
+
+The package is ad-hoc signed and not notarized. Local signature validation does not imply Gatekeeper approval or a verified publisher. The candidate records uncommitted source changes in `release.json`; commit the source and rebuild before uploading final release assets. No tag, release, or website was published during this preparation.
+
+Use the fresh-install checklist in [RELEASING.md](RELEASING.md) for testing before publication.

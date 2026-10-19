@@ -1,0 +1,31 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apple-silicon:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: swift --version
+      - name: Test models
+        run: ./Scripts/test.sh
+      - name: Build Apple Silicon app
+        run: CONFIGURATION=release ./Scripts/build-app.sh
+      - name: Verify bundle
+        run: ./Scripts/verify-release.sh build/TileMe.app
+      - name: Archive preview build
+        run: ditto -c -k --sequesterRsrc --keepParent build/TileMe.app build/TileMe-ci-apple-silicon.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TileMe-ci-apple-silicon
+          path: build/TileMe-ci-apple-silicon.zip
+          if-no-files-found: error

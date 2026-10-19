@@ -3,3 +3,6 @@ build/
 .swiftpm/
 .DS_Store
 *.xcuserstate
+dist/
+.venv/
+__pycache__/

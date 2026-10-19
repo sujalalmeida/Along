@@ -3,8 +3,9 @@
 # Some Command Line Tools upgrades leave an older private manifest interface.
 # Use a local copy of the matching public interface; never modify system files.
 TOOLCHAIN_PM="$(dirname "$(xcrun --find swift)")/../lib/swift/pm"
-PUBLIC_INTERFACE="$TOOLCHAIN_PM/ManifestAPI/PackageDescription.swiftmodule/arm64-apple-macos.swiftinterface"
-PRIVATE_INTERFACE="$TOOLCHAIN_PM/ManifestAPI/PackageDescription.swiftmodule/arm64-apple-macos.private.swiftinterface"
+HOST_ARCH="$(uname -m)"
+PUBLIC_INTERFACE="$TOOLCHAIN_PM/ManifestAPI/PackageDescription.swiftmodule/$HOST_ARCH-apple-macos.swiftinterface"
+PRIVATE_INTERFACE="$TOOLCHAIN_PM/ManifestAPI/PackageDescription.swiftmodule/$HOST_ARCH-apple-macos.private.swiftinterface"
 if [[ -z "${SWIFTPM_CUSTOM_LIBS_DIR:-}" && -f "$PUBLIC_INTERFACE" && -f "$PRIVATE_INTERFACE" ]]; then
     PUBLIC_VERSION="$(sed -n '2p' "$PUBLIC_INTERFACE")"
     PRIVATE_VERSION="$(sed -n '2p' "$PRIVATE_INTERFACE")"
