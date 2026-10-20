@@ -12,6 +12,6 @@ Release instructions live in [docs/RELEASING.md](docs/RELEASING.md). Generated a
 
 Contributions are provided under the project's MIT license.
 
-The [architecture notes](docs/ARCHITECTURE.md) explain worker confinement, failure recovery, and formatting. Tests for AX behavior should use the injected accessibility boundary rather than requiring control of another app.
+Tests for window behavior should use the injected Accessibility boundary rather than requiring control of another app.
 
 The optional development skill is [error-handling-patterns](.agents/skills/error-handling-patterns/SKILL.md) from [wshobson/agents](https://github.com/wshobson/agents). Its upstream MIT notice is included in that directory; it is not bundled with the app.

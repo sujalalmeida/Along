@@ -25,4 +25,4 @@ These downloads are ad-hoc signed and not notarized by Apple. macOS cannot verif
 
 One display and the current Space per session. Some apps limit window sizes or off-screen placement. Original positions are kept in memory; force-quitting or crashing cannot restore them. The internal bundle identifier stays the same for preference continuity. Ad-hoc updates may require a new Accessibility grant.
 
-Automated and local package checks do not establish fresh-install behavior on another Mac or runtime compatibility with every supported macOS version. That testing remains pending; this is a preview release.
+This is a preview release.

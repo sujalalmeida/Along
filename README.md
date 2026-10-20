@@ -22,7 +22,7 @@ Along lives in the menu bar. It works with your actual app windows.
 
 **Apple Silicon (M1 or newer), macOS 13 or later.** Intel Macs aren't supported.
 
-**Release status:** Along 0.7.0 is being prepared. The published v0.6.0 download is the earlier TileMe build. Building the current source produces Along.
+[**Download Along 0.7.0 for Apple Silicon**](https://github.com/sujalalmeida/Along/releases/download/v0.7.0/Along-0.7.0-apple-silicon.dmg)
 
 Along downloads use the filename `Along-<version>-apple-silicon.dmg` on the [Releases page](https://github.com/sujalalmeida/Along/releases). Open the DMG, drag **Along** into **Applications**, eject the disk image, and open the installed app. A ZIP is also included with each release.
 
@@ -58,7 +58,7 @@ Shortcuts are fixed; gaps are 12 points. Window positions are kept in memory, so
 
 Along uses macOS Accessibility APIs. It doesn't capture your screen, use private window-server APIs, or send window data to a server.
 
-Issues and pull requests are welcome. Include your macOS version, app name, and steps to reproduce a problem. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [architecture notes](docs/ARCHITECTURE.md).
+Issues and pull requests are welcome. Include your macOS version, app name, and steps to reproduce a problem. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
