@@ -1,7 +1,7 @@
 import AppKit
 
 @main
-struct TileMeApp {
+struct AlongApp {
     @MainActor
     static func main() {
         let application = NSApplication.shared

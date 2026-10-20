@@ -1,7 +1,7 @@
+import AlongCore
 import ApplicationServices
 import Foundation
 import OSLog
-import TileMeCore
 
 struct VisibleWindow: Sendable {
     let pid: pid_t
@@ -37,7 +37,7 @@ final class RowWindowEngine: @unchecked Sendable {
         var title: String
     }
     private let accessibility: any WindowAccessibility
-    private let logger = Logger(subsystem: "io.tileme.app", category: "WindowAccess")
+    private let logger = Logger(subsystem: AppIdentity.bundleIdentifier, category: "WindowAccess")
 
     init(accessibility: any WindowAccessibility = SystemWindowAccessibility()) {
         self.accessibility = accessibility
@@ -46,7 +46,7 @@ final class RowWindowEngine: @unchecked Sendable {
     private let motion = MotionInterruption()
     private var velocities: [Int: CGVector] = [:]
     func interruptMotion() { motion.interrupt() }
-    private let queue = DispatchQueue(label: "io.tileme.row", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "\(AppIdentity.bundleIdentifier).row", qos: .userInitiated)
     private var records: [Record] = []
     private var row = ScrollingRow()
     private var originals: [(pid: pid_t, window: AXUIElement, frame: CGRect)] = []
@@ -312,7 +312,8 @@ final class RowWindowEngine: @unchecked Sendable {
             let focused: AXUIElement?
             do { focused = try accessibility.focusedWindow(of: app) } catch {
                 report(error)
-                return RowResult(message: "The active app is not responding. TileMe will try again shortly.")
+                return RowResult(
+                    message: "The active app is not responding. \(AppIdentity.name) will try again shortly.")
             }
             if let focused {
                 guard let known = records.first(where: { CFEqual($0.window, focused) }) else {
@@ -349,6 +350,16 @@ final class RowWindowEngine: @unchecked Sendable {
         case .sync, .focus, .stop: break
         }
         let targets = row.layout(in: viewport, revealFocus: !directScroll)
+        if case .sync = command {
+            // A window skipped during an earlier failed scan may still be away
+            // from its target even when the row's columns have not changed.
+            dirty =
+                dirty
+                || records.contains { record in
+                    guard !unavailable.contains(record.id), let target = targets[record.id] else { return false }
+                    return record.lastApplied?.isClose(to: target) != true
+                }
+        }
         var constrained = 0
         if dirty {
             var interrupted = false

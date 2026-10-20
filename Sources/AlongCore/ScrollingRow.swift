@@ -65,26 +65,28 @@ public struct ScrollingRow: Sendable {
     public mutating func layout(in viewport: CGRect, gap: CGFloat = 12, revealFocus: Bool = true) -> [Int: CGRect] {
         guard valid(viewport) else { return [:] }
         let spacing = max(0, gap.isFinite ? gap : 0)
-        var starts: [Int: CGFloat] = [:]
         var cursor: CGFloat = 0
-        for column in columns {
-            starts[column.id] = cursor
+        let positioned = columns.map { column in
+            let start = cursor
             cursor += column.width + spacing
+            return (column: column, start: start)
         }
         let total = max(0, cursor - spacing)
-        if revealFocus, let focus = columns.first(where: { $0.id == focusedID }), let start = starts[focus.id] {
+        if revealFocus, let focused = positioned.first(where: { $0.column.id == focusedID }) {
+            let start = focused.start
+            let width = focused.column.width
             if start < offset { offset = start }
-            if start + focus.width > offset + viewport.width { offset = start + focus.width - viewport.width }
-            if focus.width > viewport.width { offset = start }
+            if start + width > offset + viewport.width { offset = start + width - viewport.width }
+            if width > viewport.width { offset = start }
         }
         offset = min(max(0, offset), max(0, total - viewport.width))
         return Dictionary(
-            uniqueKeysWithValues: columns.map { column in
+            uniqueKeysWithValues: positioned.map { item in
                 (
-                    column.id,
+                    item.column.id,
                     CGRect(
-                        x: viewport.minX + starts[column.id]! - offset, y: viewport.minY,
-                        width: column.width, height: viewport.height)
+                        x: viewport.minX + item.start - offset, y: viewport.minY,
+                        width: item.column.width, height: viewport.height)
                 )
             })
     }

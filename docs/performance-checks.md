@@ -1,26 +1,15 @@
-# Performance checks — 0.4.0
+# Checking performance
 
-Checked on the development Mac on 2026-10-16.
+Use an optimized build with Accessibility enabled. Model tests do not measure the time other apps take to respond to window operations.
 
-- All 17 model tests passed, including bounded navigation buffering, reversal, row ordering, and geometry.
-- Optimized release build and strict code-signature verification passed.
-- Visually checked the new menu bar panel, disabled permission state, text wrapping, and setup dismissal.
-- Window enumeration no longer runs on each navigation command. Full reconciliation is scheduled every two seconds during a row; focused-window checks run every 300 ms, with app lifecycle notifications triggering reconciliation.
-- Pausing cancels the row timer. Closed windows are removed from restoration history after successful enumeration; terminated processes are pruned. Panel/setup view graphs are released on close.
-- Animation interpolates over elapsed time (160 ms target), only sends intermediate updates to moving windows intersecting the viewport, and honors Reduce Motion. AX latency can still extend completion time.
+Record your Mac, macOS version, Along version, refresh rate, Reduce Motion setting, and the names/count of managed apps and windows.
 
-## Measurement limits
+1. Measure idle CPU and memory after closing setup and the menu panel.
+2. Start a row and repeat the same sequence of navigation and scrolling actions with the same windows. Record CPU and memory during that sequence.
+3. Open and close the menu panel and a test window repeatedly. Stop the row, wait for the app to settle, and compare memory with the same starting state.
+4. Check rapid direction changes, holding an arrow key, trackpad scrolling, and apps that respond slowly to Accessibility requests. Look for input backlog or a final jump after input stops.
+5. Enable Reduce Motion and repeat navigation and restoration.
 
-The old running app showed 14,176 KiB RSS in one sample after an extended session. The new release showed 64,912 KiB RSS five seconds after launch with setup loaded. These are different states and are not a valid before/after memory comparison. A total-memory reduction has **not** been established. Releasing views and obsolete window references limits retention but does not force macOS or SwiftUI to return cached pages immediately.
+Compare equivalent states over repeated runs. A single RSS reading does not establish a memory improvement or a leak; SwiftUI and macOS may retain caches. Instruments can help distinguish retained window/view objects from cached memory.
 
-The rebuilt executable needs refreshed Accessibility permission. Live navigation latency, active-row CPU, restoration, and a controlled repeated open/close memory test are still pending that refresh. Do not treat successful model tests as proof of live AX behavior.
-
-## Live follow-up after permission refresh
-
-The current build was re-added through System Settings after user authentication. TileMe displayed “Accessibility access granted.” The control panel admitted three windows into the row, and stopping through the panel displayed “Row stopped. Original positions restored.” The session was left paused. The runtime reported application/macOS placement constraints. Navigation was exercised, but no controlled switching-latency measurement was obtained. Total-memory savings and peak-memory behavior remain unproven; isolated RSS samples from different session states should not be compared as a benchmark.
-
-## Motion update — 0.5.0
-
-The focus-outline window was removed, along with the Active/Paused status badge. Modified trackpad scrolling now applies continuous deltas to the viewport and settles to a nearby column after input pauses. Keyboard motion uses a critically damped curve with velocity continuity; a thread-safe revision counter lets fresh input interrupt the worker's animation. Interrupted motion records its actual position before the next command, avoiding the old final jump to an obsolete destination. The animation clock follows the selected display's refresh rate, capped at 120 Hz, and skips missed samples. Reduce Motion remains supported.
-
-All 24 model tests passed, including continuity at retargeting, settling accuracy, fractional scroll movement, scroll boundaries, and nearest-column selection. Live perceived smoothness still depends on application AX latency and must be evaluated with the rebuilt app's Accessibility access enabled.
+The engine avoids full enumeration on each navigation input and releases obsolete references, but those design choices do not establish a specific latency or memory benchmark. Earlier development observations are preserved in [history](history/v0.4-v0.5-performance.md).

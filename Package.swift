@@ -2,15 +2,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "TileMe",
+    name: "Along",
     platforms: [.macOS(.v13)],
-    products: [.executable(name: "TileMe", targets: ["TileMe"])],
+    products: [.executable(name: "Along", targets: ["Along"])],
     targets: [
-        .target(name: "TileMeCore"),
-        .executableTarget(name: "TileMe", dependencies: ["TileMeCore"]),
-        .testTarget(name: "TileMeCoreTests", dependencies: ["TileMeCore"]),
+        .target(name: "AlongCore"),
+        .executableTarget(name: "Along", dependencies: ["AlongCore"]),
+        .testTarget(name: "AlongCoreTests", dependencies: ["AlongCore"]),
         // Exercise AX failure recovery without controlling real applications.
-        .testTarget(name: "TileMeTests", dependencies: ["TileMe"]),
+        .testTarget(name: "AlongTests", dependencies: ["Along"]),
     ],
     swiftLanguageModes: [.v6]
 )

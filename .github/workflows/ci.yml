@@ -21,11 +21,13 @@ jobs:
       - name: Build Apple Silicon app
         run: CONFIGURATION=release ./Scripts/build-app.sh
       - name: Verify bundle
-        run: ./Scripts/verify-release.sh build/TileMe.app
+        run: |
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          ./Scripts/verify-release.sh build/Along.app "$version"
       - name: Archive preview build
-        run: ditto -c -k --sequesterRsrc --keepParent build/TileMe.app build/TileMe-ci-apple-silicon.zip
+        run: ditto -c -k --sequesterRsrc --keepParent build/Along.app build/Along-ci-apple-silicon.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: TileMe-ci-apple-silicon
-          path: build/TileMe-ci-apple-silicon.zip
+          name: Along-ci-apple-silicon
+          path: build/Along-ci-apple-silicon.zip
           if-no-files-found: error

@@ -2,7 +2,7 @@ import ApplicationServices
 import Foundation
 import Testing
 
-@testable import TileMe
+@testable import Along
 
 /// Each test owns a separate fake. It is configured only before an awaited
 /// engine command and inspected after that command's worker has completed.
@@ -152,6 +152,24 @@ struct RowWindowEngineTests {
         _ = await engine.run(.sync, snapshot: access.snapshot, viewport: viewport)
         _ = await engine.run(.stop, snapshot: access.snapshot, viewport: viewport)
         #expect(access.current == access.original)
+    }
+
+    @Test func recoveredWindowReachesItsTargetWithoutAnotherNavigationCommand() async {
+        let access = FakeAccessibility()
+        let engine = RowWindowEngine(accessibility: access)
+        // The user may be in an unmanaged app, so focus changes cannot trigger
+        // a relayout for the recovered window.
+        let snapshot = RowSnapshot(
+            visible: access.snapshot.visible, frontmostPID: nil,
+            eligiblePIDs: [101], runningPIDs: [101], reduceMotion: true)
+        _ = await engine.run(.sync, snapshot: snapshot, viewport: viewport)
+        let nextViewport = viewport.offsetBy(dx: 100, dy: 0)
+        access.eligibilityFails = true
+        _ = await engine.run(.sync, snapshot: snapshot, viewport: nextViewport)
+        #expect(access.current.minX == viewport.minX)
+        access.eligibilityFails = false
+        _ = await engine.run(.sync, snapshot: snapshot, viewport: nextViewport)
+        #expect(access.current.minX == nextViewport.minX)
     }
 
     @Test func failedScrollWriteIsRetriedWhenTargetIsUnchanged() async {

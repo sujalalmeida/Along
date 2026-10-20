@@ -1,10 +1,10 @@
-# How TileMe fits together
+# How Along fits together
 
-TileMe manages a horizontal row of real macOS windows. Adding a window inserts a column after the selected one; moving through the row changes the viewport rather than shrinking neighboring windows. It uses public Accessibility APIs and has no runtime dependencies.
+Along manages a horizontal row of real macOS windows. Adding a window inserts a column after the selected one; moving through the row changes the viewport rather than shrinking neighboring windows. It uses public Accessibility APIs and has no runtime dependencies.
 
 ## Responsibilities
 
-- **TileMeCore** contains the row model, coordinate conversion, spring motion, and bounded navigation buffer. It has no AppKit or Accessibility side effects.
+- **AlongCore** contains the row model, coordinate conversion, spring motion, and bounded navigation buffer. It has no AppKit or Accessibility side effects.
 - **RowController** owns menu state and input on the main actor. It coalesces repeated input, caches window scans, and assigns a generation to each row session so an old operation cannot update a new session's UI.
 - **RowWindowEngine** owns AX window references, original frames, and layout execution on one serial worker. The `@unchecked Sendable` annotation depends on that confinement: only the locked motion-interruption token is accessed outside the worker. Do not add unsynchronized public access to its state.
 - **WindowAccessibility** is the boundary to other apps. The system implementation validates values and exposes failures as `WindowAccessError`. Tests substitute a fake implementation without moving real windows or needing Accessibility permission.
@@ -23,30 +23,10 @@ No Accessibility IPC runs on the main actor. Animation waits happen on the windo
 
 ## Verification
 
-Run `./Scripts/test.sh` for model and worker recovery tests. Run a staged release build as described in [BUILDING.md](BUILDING.md). Fake Accessibility tests establish TileMe's recovery decisions; they cannot prove another app accepts a resize or that motion feels smooth. Use [performance-checks.md](performance-checks.md) and the release checklist on real Macs.
+Run `./Scripts/test.sh` for model and worker recovery tests. Run a staged release build as described in [BUILDING.md](BUILDING.md). Fake Accessibility tests establish Along's recovery decisions; they cannot prove another app accepts a resize or that motion feels smooth. Use [performance-checks.md](performance-checks.md) and the release checklist on real Macs.
 
 Format Swift sources with `xcrun swift-format format --in-place --recursive Sources Tests Package.swift`. The repository configuration uses four spaces and a 120-column limit. Use the formatter supplied with the project's Swift toolchain to avoid unrelated formatting changes across toolchain versions.
 
-## Reliability review, October 2026
+## Review history
 
-The review found and corrected these paths:
-
-| Finding | Change |
-| --- | --- |
-| Failed or skipped restoration discarded originals | Keep unresolved frames and offer **Retry restoring windows** |
-| A successful AX return could still leave a constrained restoration | Read back and verify the restored frame |
-| Failed scroll writes cached the requested target | Invalidate the cache on failure |
-| A transient eligibility read could discard a live record | Preserve it and defer writes until a successful scan |
-| Animation and focus failures were ignored | Stop repeated animation writes and surface focus failure |
-| Space-change copy hid restoration failure | Give recovery status priority |
-| A quit request could overtake an existing stop | Join the shared restoration task |
-| Stale completion could update another session | Check a session generation before applying results |
-| Arbitrary navigation integers could overflow | Clamp movement before adding it to the index |
-| Invalid viewport/gap values could corrupt row offsets | Validate geometry and normalize spacing consistently |
-| Old snapping implementation remained compiled | Remove it and retain tests for the current row workflow |
-
-Remaining limits are deliberate: one selected display/current Space, fixed shortcuts and gaps, in-memory restoration, and app-specific off-screen constraints. This review does not establish crash recovery, latency or memory benchmarks, compatibility with every macOS version, or legal clearance.
-
-### Local verification
-
-On October 19, 2026, all 33 tests passed after these changes, including 11 worker recovery tests. Swift formatting lint and `git diff --check` passed. A separate release build at `build/reliability-review/TileMe.app` passed the bundle verifier, ARM64 architecture check, and ad-hoc code-signature verification. This is a local review build, not an updated published release. The installed app was not replaced. The new retry/quit UI and real-app behavior still need a manual check with Accessibility enabled.
+Historical validation and earlier review results are kept in [history](history/). Current release preparation follows [RELEASING.md](RELEASING.md); the [0.7.0 release review](release-audit.md) records the latest audit.

@@ -1,4 +1,4 @@
-# Building TileMe
+# Building Along
 
 ## Requirements
 
@@ -12,7 +12,7 @@ The app has no third-party runtime dependencies. Tests use Apple's Swift Testing
 ```sh
 ./Scripts/test.sh
 CONFIGURATION=release ./Scripts/build-app.sh
-open build/TileMe.app
+open build/Along.app
 ```
 
 `build-app.sh` compiles `arm64-apple-macosx13.0`, assembles a staged `.app`, embeds the icon and MIT license, signs it, checks its architecture and signature, then replaces the destination. The default is ad-hoc signing. Debug is the default configuration; use release for downloads.
@@ -20,10 +20,10 @@ open build/TileMe.app
 You can choose another destination without replacing your working app:
 
 ```sh
-APP_PATH="$PWD/build/test/TileMe.app" CONFIGURATION=release ./Scripts/build-app.sh
+APP_PATH="$PWD/build/test/Along.app" CONFIGURATION=release ./Scripts/build-app.sh
 ```
 
-The destination must be an absolute path ending in `.app`. It must not be running. Quit through TileMe's menu to restore managed windows before replacing a copy.
+The destination must be an absolute path ending in `.app`. It must not be running. Quit through Along's menu to restore managed windows before replacing a copy.
 
 ## App icon and installer artwork
 
@@ -41,7 +41,7 @@ The ICNS includes standard sizes from 16 to 1024 pixels. The installer backgroun
 ./Scripts/package-release.sh
 ```
 
-The script builds an ARM64 release at `build/distribution/TileMe.app`, then creates:
+The script builds an ARM64 release at `build/distribution/Along.app`, then creates:
 
 - A read-only compressed DMG with a custom Finder background, positioned app icon, Applications shortcut, and Read Me.
 - A ZIP containing the same app bundle.
@@ -49,12 +49,14 @@ The script builds an ARM64 release at `build/distribution/TileMe.app`, then crea
 
 It remounts the finished DMG and verifies the packaged app's signature, architecture, icon, license, metadata, and Applications link. Temporary images are detached on exit. Existing release output is not overwritten; increase the app version or set `DIST_DIR` to a different folder for a test build.
 
-The Python tools `ds-store` and `mac-alias` are isolated in `.build/packaging/venv`. Versions and wheel hashes are pinned in `Scripts/packaging-requirements.txt`. Wheels are downloaded over HTTPS and pip verifies their hashes before installing them. No Python environment or build tool is shipped inside TileMe. Their upstream projects are [ds_store](https://github.com/dmgbuild/ds_store) and [mac_alias](https://github.com/dmgbuild/mac_alias), both MIT licensed.
+The Python tools `ds-store` and `mac-alias` are isolated in `.build/packaging/venv`. Versions and wheel hashes are pinned in `Scripts/packaging-requirements.txt`. Wheels are downloaded over HTTPS and pip verifies their hashes before installing them. No Python environment or build tool is shipped inside Along. Their upstream projects are [ds_store](https://github.com/dmgbuild/ds_store) and [mac_alias](https://github.com/dmgbuild/mac_alias), both MIT licensed.
+
+For a public release, use `REQUIRE_CLEAN_SOURCE=1 ./Scripts/package-release.sh`; it refuses uncommitted source. Local candidate packaging still records a dirty working tree in `release.json`.
 
 To verify an app manually:
 
 ```sh
-./Scripts/verify-release.sh /path/to/TileMe.app
+./Scripts/verify-release.sh /path/to/Along.app 0.7.0
 ```
 
 ## Signing

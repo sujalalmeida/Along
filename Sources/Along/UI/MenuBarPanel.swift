@@ -1,3 +1,4 @@
+import AlongCore
 import SwiftUI
 
 struct MenuBarPanel: View {
@@ -14,7 +15,7 @@ struct MenuBarPanel: View {
                     .frame(width: 40, height: 40)
                     .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("TileMe").font(.title3.bold())
+                    Text(AppIdentity.name).font(.title3.bold())
                     Text("Room for every window").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -74,7 +75,7 @@ struct MenuBarPanel: View {
             HStack {
                 Button(action: setup) { Label("Setup", systemImage: "gearshape") }
                 Spacer()
-                Button("Quit TileMe", action: quit).help("Restore windows and quit")
+                Button("Quit \(AppIdentity.name)", action: quit).help("Restore windows and quit")
             }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
         }
         .padding(20).frame(width: 340)

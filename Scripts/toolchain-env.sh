@@ -10,7 +10,7 @@ if [[ -z "${SWIFTPM_CUSTOM_LIBS_DIR:-}" && -f "$PUBLIC_INTERFACE" && -f "$PRIVAT
     PUBLIC_VERSION="$(sed -n '2p' "$PUBLIC_INTERFACE")"
     PRIVATE_VERSION="$(sed -n '2p' "$PRIVATE_INTERFACE")"
     if [[ "$PUBLIC_VERSION" != "$PRIVATE_VERSION" ]]; then
-        LOCAL_PM="$PROJECT_ROOT/.build/tileme-toolchain-libs"
+        LOCAL_PM="$PROJECT_ROOT/.build/along-toolchain-libs"
         mkdir -p "$LOCAL_PM/ManifestAPI"
         cp -R "$TOOLCHAIN_PM/ManifestAPI/." "$LOCAL_PM/ManifestAPI/"
         find "$LOCAL_PM/ManifestAPI" -name '*.private.swiftinterface' -delete
@@ -23,8 +23,8 @@ SWIFT_HEADERS="$(dirname "$(xcrun --find swift)")/../include/swift"
 if [[ -f "$SWIFT_HEADERS/module.modulemap" && -f "$SWIFT_HEADERS/bridging.modulemap" ]] &&
    /usr/bin/grep -q 'module SwiftBridging' "$SWIFT_HEADERS/module.modulemap" &&
    /usr/bin/grep -q 'module SwiftBridging' "$SWIFT_HEADERS/bridging.modulemap"; then
-    mkdir -p "$PROJECT_ROOT/.build/tileme-toolchain-libs"
-    OVERLAY="$PROJECT_ROOT/.build/tileme-toolchain-libs/overlay.json"
+    mkdir -p "$PROJECT_ROOT/.build/along-toolchain-libs"
+    OVERLAY="$PROJECT_ROOT/.build/along-toolchain-libs/overlay.json"
     python3 - "$SWIFT_HEADERS" "$OVERLAY" <<'PYOVERLAY'
 import json, pathlib, sys
 headers = pathlib.Path(sys.argv[1]).resolve()

@@ -1,7 +1,7 @@
 import CoreGraphics
 import Testing
 
-@testable import TileMeCore
+@testable import AlongCore
 
 struct ScrollingRowTests {
     let viewport = CGRect(x: 12, y: 36, width: 1000, height: 720)

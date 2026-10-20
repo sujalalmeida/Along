@@ -1,7 +1,7 @@
 import CoreGraphics
 import Testing
 
-@testable import TileMeCore
+@testable import AlongCore
 
 struct WindowMotionTests {
     @Test func movementStartsAtCurrentPositionAndVelocity() {

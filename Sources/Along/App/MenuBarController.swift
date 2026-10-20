@@ -1,3 +1,4 @@
+import AlongCore
 import AppKit
 import SwiftUI
 
@@ -14,9 +15,10 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         self.row = row
         self.showOnboarding = showOnboarding
         super.init()
-        statusItem.button?.image = NSImage(systemSymbolName: "rectangle.split.3x1", accessibilityDescription: "TileMe")
+        statusItem.button?.image = NSImage(
+            systemSymbolName: "rectangle.split.3x1", accessibilityDescription: AppIdentity.name)
         statusItem.button?.image?.isTemplate = true
-        statusItem.button?.toolTip = "TileMe — Scrolling windows"
+        statusItem.button?.toolTip = "\(AppIdentity.name) — Scrolling windows"
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePanel)
         popover.behavior = .transient

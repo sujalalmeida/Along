@@ -1,3 +1,4 @@
+import AlongCore
 import SwiftUI
 
 struct PermissionView: View {
@@ -5,7 +6,7 @@ struct PermissionView: View {
     @ObservedObject var row: RowController
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Label("TileMe", systemImage: "rectangle.split.3x1")
+            Label(AppIdentity.name, systemImage: "rectangle.split.3x1")
                 .font(.largeTitle.bold())
             Text("Your windows, in one scrolling row.")
                 .font(.title3).foregroundStyle(.secondary)
@@ -39,7 +40,7 @@ struct PermissionView: View {
             .foregroundStyle(permissions.isTrusted ? .green : .orange)
             if !permissions.isTrusted {
                 Text(
-                    "Enable this copy of TileMe in System Settings → Privacy & Security → Accessibility (called Device Control and Data Access on newer macOS)."
+                    "Enable this copy of \(AppIdentity.name) in System Settings → Privacy & Security → Accessibility (called Device Control and Data Access on newer macOS)."
                 )
                 .font(.callout).fixedSize(horizontal: false, vertical: true)
                 HStack {
@@ -50,7 +51,7 @@ struct PermissionView: View {
                 DisclosureGroup("Already enabled, but still not working?") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(
-                            "macOS has not granted access to this running copy. A rebuilt app can leave an enabled entry for an older build. Remove TileMe from the permission list with the − button, then use + to add the exact app shown below and enable it again."
+                            "macOS has not granted access to this running copy. A rebuilt app can leave an enabled entry for an older build. Remove \(AppIdentity.name) from the permission list with the − button, then use + to add the exact app shown below and enable it again."
                         )
                         Text(permissions.runningAppPath).font(.caption.monospaced()).textSelection(.enabled)
                         Button("Reveal This Copy in Finder") { permissions.revealRunningApp() }
@@ -61,7 +62,7 @@ struct PermissionView: View {
                 }
             } else {
                 Text(
-                    "Close setup and choose Start Scrolling Row from the menu bar. Stop or quit TileMe to restore the original window positions."
+                    "Close setup and choose Start scrolling row from the menu bar. Stop or quit \(AppIdentity.name) to restore the original window positions."
                 )
                 .font(.callout).fixedSize(horizontal: false, vertical: true)
             }

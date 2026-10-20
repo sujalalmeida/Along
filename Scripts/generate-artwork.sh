@@ -10,7 +10,7 @@ for flag in ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"}; do
 done
 xcrun swiftc ${COMPILER_FLAGS[@]+"${COMPILER_FLAGS[@]}"} Resources/Artwork/GenerateArtwork.swift -o .build/artwork/generate
 .build/artwork/generate "$PROJECT_ROOT/.build/artwork"
-iconutil --convert icns .build/artwork/TileMe.iconset --output Resources/AppIcon.icns
+iconutil --convert icns .build/artwork/Along.iconset --output Resources/AppIcon.icns
 cp .build/artwork/AppIcon.png Resources/Artwork/AppIcon.png
 cp .build/artwork/InstallerBackground.png Resources/Artwork/InstallerBackground.png
 printf 'Generated app icon and installer artwork.\n'

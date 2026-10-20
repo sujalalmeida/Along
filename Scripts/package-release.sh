@@ -4,13 +4,22 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf 'Invalid version.\n' >&2; exit 1; }
+REQUIRE_CLEAN_SOURCE="${REQUIRE_CLEAN_SOURCE:-0}"
+case "$REQUIRE_CLEAN_SOURCE" in 0|1) ;; *) printf 'REQUIRE_CLEAN_SOURCE must be 0 or 1.\n' >&2; exit 1 ;; esac
+if [[ "$REQUIRE_CLEAN_SOURCE" == 1 ]]; then
+    git rev-parse --verify HEAD >/dev/null
+    if [[ -n "$(git status --porcelain)" ]]; then
+        printf 'Commit the source and all intended files before packaging a public release.\n' >&2
+        exit 1
+    fi
+fi
 DIST_DIR="${DIST_DIR:-$PROJECT_ROOT/dist}"
 mkdir -p "$DIST_DIR" "$PROJECT_ROOT/.build"
 DIST_DIR="$(cd "$DIST_DIR" && pwd)"
-NAME="TileMe-$VERSION-apple-silicon"
+NAME="Along-$VERSION-apple-silicon"
 FINAL="$DIST_DIR/$NAME"
 if [[ -e "$FINAL" ]]; then printf 'Release output already exists: %s\nUse a new version or DIST_DIR.\n' "$FINAL" >&2; exit 1; fi
-SIGNING_IDENTITY=- APP_PATH="$PROJECT_ROOT/build/distribution/TileMe.app" CONFIGURATION=release ./Scripts/build-app.sh
+SIGNING_IDENTITY=- APP_PATH="$PROJECT_ROOT/build/distribution/Along.app" CONFIGURATION=release ./Scripts/build-app.sh
 ./Scripts/prepare-packaging.sh
 WORK="$(mktemp -d "$PROJECT_ROOT/.build/dmg.XXXXXX")"
 MOUNT="$WORK/mounted"
@@ -28,11 +37,11 @@ trap cleanup EXIT
 STAGE="$WORK/content"
 OUTPUT="$WORK/output"
 mkdir -p "$STAGE/.background" "$OUTPUT" "$MOUNT"
-ditto --norsrc --noextattr "$PROJECT_ROOT/build/distribution/TileMe.app" "$STAGE/TileMe.app"
+ditto --norsrc --noextattr "$PROJECT_ROOT/build/distribution/Along.app" "$STAGE/Along.app"
 ln -s /Applications "$STAGE/Applications"
 cp Resources/InstallerReadMe.txt "$STAGE/Read Me.txt"
 cp Resources/Artwork/InstallerBackground.png "$STAGE/.background/installer.png"
-hdiutil create -quiet -fs HFS+ -format UDRW -volname "TileMe $VERSION" -srcfolder "$STAGE" "$WORK/writable.dmg"
+hdiutil create -quiet -fs HFS+ -format UDRW -volname "Along $VERSION" -srcfolder "$STAGE" "$WORK/writable.dmg"
 hdiutil attach -quiet -nobrowse -readwrite -mountpoint "$MOUNT" "$WORK/writable.dmg"
 MOUNTED=1
 "$PROJECT_ROOT/.build/packaging/venv/bin/python" Scripts/layout-dmg.py "$MOUNT"
@@ -40,11 +49,11 @@ sync
 hdiutil detach -quiet "$MOUNT"
 MOUNTED=0
 hdiutil convert -quiet "$WORK/writable.dmg" -format UDZO -imagekey zlib-level=9 -o "$OUTPUT/$NAME.dmg"
-ditto -c -k --sequesterRsrc --keepParent "$STAGE/TileMe.app" "$OUTPUT/$NAME.zip"
+ditto -c -k --sequesterRsrc --keepParent "$STAGE/Along.app" "$OUTPUT/$NAME.zip"
 cp Resources/InstallerReadMe.txt "$OUTPUT/INSTALL.txt"
 cp LICENSE "$OUTPUT/LICENSE"
 cp docs/release-notes.md "$OUTPUT/RELEASE-NOTES.md"
-python3 - "$OUTPUT" "$VERSION" <<'PY'
+python3 - "$OUTPUT" "$VERSION" "$REQUIRE_CLEAN_SOURCE" <<'PY'
 import json, pathlib, subprocess, sys
 out = pathlib.Path(sys.argv[1])
 try:
@@ -52,8 +61,10 @@ try:
     dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], text=True).strip())
 except subprocess.CalledProcessError:
     commit, dirty = None, True
+if sys.argv[3] == '1' and dirty:
+    sys.exit('Source changed while packaging; rebuild from a clean commit.')
 (out / 'release.json').write_text(json.dumps({
-    'name': 'TileMe', 'version': sys.argv[2], 'channel': 'preview',
+    'name': 'Along', 'version': sys.argv[2], 'channel': 'preview',
     'architectures': ['arm64'], 'minimumMacOS': '13.0',
     'signing': 'ad-hoc', 'notarized': False,
     'sourceCommit': commit, 'sourceHasUncommittedChanges': dirty,
@@ -61,12 +72,12 @@ except subprocess.CalledProcessError:
 PY
 mkdir -p "$WORK/zip-check"
 ditto -x -k "$OUTPUT/$NAME.zip" "$WORK/zip-check"
-./Scripts/verify-release.sh "$WORK/zip-check/TileMe.app"
+./Scripts/verify-release.sh "$WORK/zip-check/Along.app" "$VERSION"
 # Validate the exact compressed image, not only its staging directory.
 hdiutil verify "$OUTPUT/$NAME.dmg"
 hdiutil attach -quiet -nobrowse -readonly -mountpoint "$MOUNT" "$OUTPUT/$NAME.dmg"
 MOUNTED=1
-./Scripts/verify-release.sh "$MOUNT/TileMe.app"
+./Scripts/verify-release.sh "$MOUNT/Along.app" "$VERSION"
 [[ "$(readlink "$MOUNT/Applications")" == /Applications ]]
 [[ -f "$MOUNT/.DS_Store" && -f "$MOUNT/Read Me.txt" && -f "$MOUNT/.background/installer.png" ]]
 hdiutil detach -quiet "$MOUNT"

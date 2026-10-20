@@ -1,6 +1,6 @@
 # Independent implementation and publishing
 
-Research notes, October 19, 2026. This uses U.S. official sources as a starting point. It is general information, not an attorney's opinion or clearance for TileMe; laws and obligations differ where you publish and where users live.
+Research notes, October 19, 2026. This uses U.S. official sources as a starting point. It is general information, not an attorney's opinion or clearance for Along; laws and obligations differ where you publish and where users live.
 
 ## A similar workflow can be implemented independently
 
@@ -8,13 +8,13 @@ The U.S. Copyright Office distinguishes a program's protected expression from it
 
 Sources: [Computer Programs](https://www.copyright.gov/register/tx-programs.html), [Circular 61](https://www.copyright.gov/circs/circ61.pdf).
 
-Describe TileMe as an **independent open-source window manager** or an **open-source alternative**. “Open-sourcing TileMyMac” would suggest permission to release that developer's source, which this project does not have. The design brief was based on public behavior and user-supplied screenshots; that is not a license to redistribute the screenshots, product copy, branding, artwork, or binaries. Use TileMe's own app recordings, text, and artwork on the website.
+Describe Along as an **independent open-source window manager** or an **open-source alternative**. “Open-sourcing TileMyMac” would suggest permission to release that developer's source, which this project does not have. The design brief was based on public behavior and user-supplied screenshots; that is not a license to redistribute the screenshots, product copy, branding, artwork, or binaries. Use Along's own app recordings, text, and artwork on the website.
 
 ## A distinct name still needs clearance
 
-Trademarks concern confusion about who supplies a product. Similar names for related software can cause problems even when their source code differs. Do not imply endorsement or affiliation. This review has **not cleared the name TileMe**, searched all registered or unregistered marks, or established rights to any domain.
+Trademarks concern confusion about who supplies a product. Similar names for related software can cause problems even when their source code differs. Do not imply endorsement or affiliation. The app has been renamed from TileMe to Along. This review has **not cleared the name Along**, searched all registered or unregistered marks, or established rights to any domain.
 
-A limited public search found an existing [Tileme Windows tiling window manager](https://gitlab.com/slavoutich/tileme), whose project page dates its creation to July 2020, and an unrelated [TileMe Kegel Companion app](https://apps.apple.com/us/app/tileme-kegel-companion/id6811625981). These uses do not establish infringement or their owners' trademark rights. The window-management use is a concrete reason to review the name, and consider a more distinctive one, before promoting this project publicly. No name change has been made in this review.
+A limited public search found an existing [Tileme Windows tiling window manager](https://gitlab.com/slavoutich/tileme), whose project page dates its creation to July 2020, and an unrelated [TileMe Kegel Companion app](https://apps.apple.com/us/app/tileme-kegel-companion/id6811625981). These uses do not establish infringement or their owners' trademark rights. The window-management use is a concrete reason to review the name, and consider a more distinctive one, before promoting this project publicly. The prior name has since been replaced by Along. That change is not a trademark clearance for Along.
 
 Sources: [USPTO likelihood of confusion](https://www.uspto.gov/trademarks/search/likelihood-confusion), [comprehensive clearance searching](https://www.uspto.gov/trademarks/search/comprehensive-clearance-search-similar-trademarks).
 

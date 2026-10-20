@@ -35,7 +35,7 @@ func text(_ value: String, x: CGFloat, y: CGFloat, size: CGFloat, color: NSColor
     (value as NSString).draw(at: NSPoint(x: x, y: y), withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color])
 }
 let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
-let iconset = root.appendingPathComponent("TileMe.iconset", isDirectory: true)
+let iconset = root.appendingPathComponent("Along.iconset", isDirectory: true)
 try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
 for size in [16, 32, 128, 256, 512] {
     for scale in [1, 2] {
@@ -52,13 +52,13 @@ try png(width: 1024, height: 1024, draw: icon).write(to: root.appendingPathCompo
 try png(width: 640, height: 370) {
     NSColor(srgbRed: 0.96, green: 0.955, blue: 0.94, alpha: 1).setFill()
     NSRect(x: 0, y: 0, width: 640, height: 370).fill()
-    text("TileMe", x: 42, y: 306, size: 28, color: .init(white: 0.14, alpha: 1), weight: .semibold)
-    text("Drag TileMe into Applications.", x: 43, y: 278, size: 15, color: .init(white: 0.4, alpha: 1))
+    text("Along", x: 42, y: 306, size: 28, color: .init(white: 0.14, alpha: 1), weight: .semibold)
+    text("Drag Along into Applications.", x: 43, y: 278, size: 15, color: .init(white: 0.4, alpha: 1))
     let arrow = NSBezierPath()
     arrow.move(to: NSPoint(x: 292, y: 170)); arrow.line(to: NSPoint(x: 368, y: 170))
     arrow.move(to: NSPoint(x: 356, y: 180)); arrow.line(to: NSPoint(x: 368, y: 170)); arrow.line(to: NSPoint(x: 356, y: 160))
     arrow.lineWidth = 2.5; arrow.lineCapStyle = .round
     NSColor(srgbRed: 0.88, green: 0.40, blue: 0.22, alpha: 1).setStroke(); arrow.stroke()
-    text("Then open TileMe from Applications.", x: 43, y: 60, size: 14, color: .init(white: 0.4, alpha: 1))
+    text("Then open Along from Applications.", x: 43, y: 60, size: 14, color: .init(white: 0.4, alpha: 1))
     text("Free and open source.  •  macOS 13 or later", x: 43, y: 38, size: 12, color: .init(white: 0.5, alpha: 1))
 }.write(to: root.appendingPathComponent("InstallerBackground.png"))

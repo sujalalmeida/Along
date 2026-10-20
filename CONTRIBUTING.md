@@ -6,7 +6,7 @@ Use Swift 6, run `./Scripts/test.sh`, and build the app before opening a pull re
 
 Keep UI copy short and changes focused. Don't add private window-server APIs or new runtime dependencies without discussing the need first. Include original artwork sources when changing icons.
 
-For a bug report, include your Mac model/chip, macOS version, TileMe version, the affected application, and the steps to reproduce it. Avoid sharing screenshots or window titles that contain private information.
+For a bug report, include your Mac model/chip, macOS version, Along version, the affected application, and the steps to reproduce it. Avoid sharing screenshots or window titles that contain private information.
 
 Release instructions live in [docs/RELEASING.md](docs/RELEASING.md). Generated apps and DMGs should not be committed.
 

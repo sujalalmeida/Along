@@ -1,6 +1,6 @@
 import Testing
 
-@testable import TileMeCore
+@testable import AlongCore
 
 struct NavigationBufferTests {
     @Test func rapidInputIsCoalescedAndConsumedOnce() {

@@ -1,11 +1,19 @@
 import AppKit
 import Carbon
 
+enum HotkeyAction: UInt32, Sendable {
+    case previousWindow = 1
+    case nextWindow
+    case cycleWidth
+    case toggleRow
+}
+
 @MainActor
 final class HotkeyManager {
+    private nonisolated static let signature: OSType = 0x414C_4E47  // ALNG
     private var handler: EventHandlerRef?
     private var keys: [EventHotKeyRef] = []
-    var onAction: ((UInt32) -> Void)?
+    var onAction: ((HotkeyAction) -> Void)?
     private(set) var conflicts: [String] = []
 
     func start() {
@@ -22,11 +30,11 @@ final class HotkeyManager {
                     event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
                     nil, MemoryLayout<EventHotKeyID>.size, nil, &hotkey)
                 guard result == noErr else { return result }
-                guard hotkey.signature == 0x5449_4C45 else { return OSStatus(eventNotHandledErr) }
-                let id = hotkey.id
+                guard hotkey.signature == HotkeyManager.signature else { return OSStatus(eventNotHandledErr) }
+                guard let action = HotkeyAction(rawValue: hotkey.id) else { return OSStatus(eventNotHandledErr) }
                 // Carbon's application event handler is delivered on the application main run loop.
                 MainActor.assumeIsolated {
-                    Unmanaged<HotkeyManager>.fromOpaque(context).takeUnretainedValue().onAction?(id)
+                    Unmanaged<HotkeyManager>.fromOpaque(context).takeUnretainedValue().onAction?(action)
                 }
                 return noErr
             }, 1, &event, pointer, &handler)
@@ -34,14 +42,14 @@ final class HotkeyManager {
             conflicts = ["Global shortcut handler unavailable (\(status))"]
             return
         }
-        let bindings: [(UInt32, UInt32, String)] = [
-            (1, UInt32(kVK_LeftArrow), "⌃⌥←"), (2, UInt32(kVK_RightArrow), "⌃⌥→"),
-            (3, UInt32(kVK_ANSI_R), "⌃⌥R"), (4, UInt32(kVK_ANSI_P), "⌃⌥P"),
+        let bindings: [(HotkeyAction, UInt32, String)] = [
+            (.previousWindow, UInt32(kVK_LeftArrow), "⌃⌥←"), (.nextWindow, UInt32(kVK_RightArrow), "⌃⌥→"),
+            (.cycleWidth, UInt32(kVK_ANSI_R), "⌃⌥R"), (.toggleRow, UInt32(kVK_ANSI_P), "⌃⌥P"),
         ]
         for (id, code, label) in bindings {
             var ref: EventHotKeyRef?
             let result = RegisterEventHotKey(
-                code, UInt32(controlKey | optionKey), EventHotKeyID(signature: 0x5449_4C45, id: id),
+                code, UInt32(controlKey | optionKey), EventHotKeyID(signature: Self.signature, id: id.rawValue),
                 GetApplicationEventTarget(), 0, &ref)
             if result == noErr, let ref {
                 keys.append(ref)

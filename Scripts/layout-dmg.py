@@ -23,6 +23,6 @@ with DSStore.open(str(volume / '.DS_Store'), 'w+') as store:
         'labelOnBottom': True, 'showIconPreview': True, 'showItemInfo': False,
         'scrollPositionX': 0.0, 'scrollPositionY': 0.0,
     }
-    store['TileMe.app']['Iloc'] = (180, 200)
+    store['Along.app']['Iloc'] = (180, 200)
     store['Applications']['Iloc'] = (480, 200)
     store['Read Me.txt']['Iloc'] = (575, 275)

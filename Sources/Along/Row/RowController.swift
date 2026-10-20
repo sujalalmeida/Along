@@ -1,7 +1,7 @@
+import AlongCore
 import AppKit
 import ApplicationServices
 import Combine
-import TileMeCore
 
 @MainActor
 final class RowController: ObservableObject {
@@ -44,14 +44,13 @@ final class RowController: ObservableObject {
     func startMonitoring() {
         guard !monitoring else { return }
         monitoring = true
-        hotkeys.onAction = { [weak self] id in
+        hotkeys.onAction = { [weak self] action in
             guard let self else { return }
-            switch id {
-            case 1: send(.step(-1))
-            case 2: send(.step(1))
-            case 3: send(.resize)
-            case 4: toggle()
-            default: break
+            switch action {
+            case .previousWindow: send(.step(-1))
+            case .nextWindow: send(.step(1))
+            case .cycleWidth: send(.resize)
+            case .toggleRow: toggle()
             }
         }
         hotkeys.start()
