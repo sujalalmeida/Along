@@ -16,6 +16,7 @@ private final class FakeAccessibility: WindowAccessibility, @unchecked Sendable 
     var eligibilityFails = false
     var movable = true
     var placementFails = false
+    var moveFails = false
     var ignoresPlacement = false
     var focusFails = false
     var closed = false
@@ -54,7 +55,11 @@ private final class FakeAccessibility: WindowAccessibility, @unchecked Sendable 
         }
         if !ignoresPlacement { self.current = frame }
     }
-    func move(_ window: AXUIElement, to point: CGPoint) throws { current.origin = point }
+    func move(_ window: AXUIElement, to point: CGPoint) throws {
+        writes += 1
+        if moveFails { throw timeout }
+        current.origin = point
+    }
     func focus(_ window: AXUIElement, pid: pid_t) throws {
         if focusFails { throw timeout }
     }
@@ -217,9 +222,9 @@ struct RowWindowEngineTests {
         let access = FakeAccessibility()
         let engine = RowWindowEngine(accessibility: access)
         _ = await engine.run(.sync, snapshot: access.snapshot, viewport: viewport)
-        access.placementFails = true
+        access.moveFails = true
         _ = await engine.run(.scroll(0), snapshot: access.snapshot, viewport: viewport.offsetBy(dx: 100, dy: 0))
-        access.placementFails = false
+        access.moveFails = false
         _ = await engine.run(.scroll(0), snapshot: access.snapshot, viewport: viewport.offsetBy(dx: 100, dy: 0))
         #expect(access.current.minX == viewport.minX + 100)
     }

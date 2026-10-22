@@ -218,7 +218,7 @@ final class RowWindowEngine: @unchecked Sendable {
         var failed = false
         let moving = records.compactMap { record -> MotionTarget? in
             guard !unavailable.contains(record.id), let target = targets[record.id],
-                let start = try? accessibility.frame(of: record.window),
+                let start = record.lastApplied ?? (try? accessibility.frame(of: record.window)),
                 abs(start.minX - target.minX) > 0.5 || abs(start.minY - target.minY) > 0.5,
                 start.intersects(viewport) || target.intersects(viewport)
             else { return nil }
@@ -249,12 +249,24 @@ final class RowWindowEngine: @unchecked Sendable {
                     let y = WindowMotion.sample(
                         from: start.minY, to: target.minY, velocity: velocity.dy, elapsed: elapsed)
                     do {
-                        try accessibility.move(window, to: CGPoint(x: x.position, y: y.position))
+                        let point = CGPoint(x: x.position, y: y.position)
+                        if let index = records.firstIndex(where: { $0.id == id }),
+                            let current = records[index].lastApplied,
+                            abs(current.minX - point.x) < 0.5 && abs(current.minY - point.y) < 0.5
+                        {
+                            continue
+                        }
+                        try accessibility.move(window, to: point)
+                        if let index = records.firstIndex(where: { $0.id == id }) {
+                            records[index].lastApplied = CGRect(origin: point, size: start.size)
+                        }
                         velocities[id] = CGVector(dx: x.velocity, dy: y.velocity)
                     } catch {
                         // Stop this animation rather than hammering an unresponsive app
                         // at display refresh rate. The final placement reports the issue.
                         report(error)
+                        if let index = records.firstIndex(where: { $0.id == id }) { records[index].lastApplied = nil }
+                        velocities.removeValue(forKey: id)
                         failed = true
                         break
                     }
@@ -269,25 +281,36 @@ final class RowWindowEngine: @unchecked Sendable {
         return (interrupted, failed)
     }
 
-    private func apply(targets: [Int: CGRect], directScroll: Bool) -> Int {
+    private func apply(targets: [Int: CGRect], resizeWindows: Bool) -> Int {
         var constrained = 0
         for index in records.indices {
-            guard !unavailable.contains(records[index].id), let target = targets[records[index].id] else {
-                continue
-            }
+            guard !unavailable.contains(records[index].id), let target = targets[records[index].id] else { continue }
             let window = records[index].window
             do {
-                let current = directScroll ? records[index].lastApplied : try accessibility.frame(of: window)
-                try accessibility.place(window, at: target, from: current)
-                // Direct scrolling avoids a synchronous read per gesture, but only
-                // successful writes may update this optimistic cache.
-                let actual = directScroll ? target : try accessibility.frame(of: window)
-                if !actual.isClose(to: target) { constrained += 1 }
-                if abs(actual.width - target.width) > 3 {
-                    row.resize(id: records[index].id, width: actual.width)
-                    needsRelayout = true
+                if resizeWindows {
+                    let current = try records[index].lastApplied ?? accessibility.frame(of: window)
+                    if current.isClose(to: target) { continue }
+                    try accessibility.place(window, at: target, from: current)
+                    let actual = try accessibility.frame(of: window)
+                    if !actual.isClose(to: target) { constrained += 1 }
+                    if abs(actual.width - target.width) > 3 {
+                        row.resize(id: records[index].id, width: actual.width)
+                        needsRelayout = true
+                    }
+                    records[index].lastApplied = actual
+                } else {
+                    // Navigation only changes position. Avoid repeated AX reads and
+                    // size writes; the next full scan reconciles app constraints.
+                    if let current = records[index].lastApplied,
+                        current.origin == target.origin
+                    {
+                        continue
+                    }
+                    try accessibility.move(window, to: target.origin)
+                    if let current = records[index].lastApplied {
+                        records[index].lastApplied = CGRect(origin: target.origin, size: current.size)
+                    }
                 }
-                records[index].lastApplied = actual
             } catch {
                 report(error)
                 constrained += 1
@@ -334,6 +357,7 @@ final class RowWindowEngine: @unchecked Sendable {
         }
         var raise = false
         var directScroll = false
+        var resizeWindows = false
         switch command {
         case .step(let direction):
             row.step(direction)
@@ -347,12 +371,14 @@ final class RowWindowEngine: @unchecked Sendable {
             dirty = true
             raise = true
         case .resize:
+            resizeWindows = true
             if let id = row.focusedID, let column = row.columns.first(where: { $0.id == id }) {
                 let widths = [viewport.width / 3, (viewport.width - 12) / 2, viewport.width * 2 / 3, viewport.width]
                 row.resize(id: id, width: widths.first(where: { $0 > column.width + 15 }) ?? widths[0])
                 dirty = true
             }
-        case .sync, .focus, .stop: break
+        case .sync: resizeWindows = true
+        case .focus, .stop: break
         }
         let targets = row.layout(in: viewport, revealFocus: !directScroll)
         if case .sync = command {
@@ -377,13 +403,10 @@ final class RowWindowEngine: @unchecked Sendable {
             if interrupted {
                 // Keep actual in-flight positions. The pending command retargets from here
                 // instead of snapping to an obsolete destination before starting again.
-                for index in records.indices {
-                    records[index].lastApplied = (try? accessibility.frame(of: records[index].window))
-                }
                 return RowResult(message: "Moving through row…")
             }
             velocities.removeAll(keepingCapacity: true)
-            constrained = apply(targets: targets, directScroll: directScroll)
+            constrained = apply(targets: targets, resizeWindows: resizeWindows)
         }
         if dirty { placementConstrained = constrained > 0 }
         guard let focus = records.first(where: { $0.id == row.focusedID }) else {
