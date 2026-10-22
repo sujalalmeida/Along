@@ -21,6 +21,8 @@ private final class FakeAccessibility: WindowAccessibility, @unchecked Sendable 
     var closed = false
     var frameFails = false
     var writes = 0
+    var requiresMoveBeforeResize = false
+    var placementFailuresRemaining = 0
 
     func application(pid: pid_t) -> AXUIElement { window }
     func windows(of app: AXUIElement) throws -> [AXUIElement] {
@@ -42,6 +44,14 @@ private final class FakeAccessibility: WindowAccessibility, @unchecked Sendable 
         if let current, current.isClose(to: frame) { return }
         writes += 1
         if placementFails { throw timeout }
+        if placementFailuresRemaining > 0 {
+            placementFailuresRemaining -= 1
+            throw timeout
+        }
+        if requiresMoveBeforeResize && self.current.origin != frame.origin && self.current.size != frame.size {
+            self.current = CGRect(origin: frame.origin, size: CGSize(width: frame.width - 40, height: frame.height))
+            return
+        }
         if !ignoresPlacement { self.current = frame }
     }
     func move(_ window: AXUIElement, to point: CGPoint) throws { current.origin = point }
@@ -70,6 +80,37 @@ struct RowWindowEngineTests {
         access.placementFails = false
         let restored = await engine.run(.stop, snapshot: access.snapshot, viewport: viewport)
         #expect(restored.pendingRestorations == 0)
+        #expect(access.current == access.original)
+    }
+
+    @Test func restoreMovesBackBeforeResizingAnOffscreenWindow() async {
+        let access = FakeAccessibility()
+        let engine = RowWindowEngine(accessibility: access)
+        _ = await engine.run(.sync, snapshot: access.snapshot, viewport: viewport)
+        access.requiresMoveBeforeResize = true
+        let result = await engine.run(.stop, snapshot: access.snapshot, viewport: viewport)
+        #expect(result.pendingRestorations == 0)
+        #expect(access.current == access.original)
+    }
+
+    @Test func restorationRetriesATransientWriteWithoutAnotherQuit() async {
+        let access = FakeAccessibility()
+        let engine = RowWindowEngine(accessibility: access)
+        _ = await engine.run(.sync, snapshot: access.snapshot, viewport: viewport)
+        access.placementFailuresRemaining = 1
+        let result = await engine.run(.stop, snapshot: access.snapshot, viewport: viewport)
+        #expect(result.pendingRestorations == 0)
+        #expect(access.current == access.original)
+    }
+
+    @Test func temporarilyUnlistedWindowKeepsItsOriginalForQuit() async {
+        let access = FakeAccessibility()
+        let engine = RowWindowEngine(accessibility: access)
+        _ = await engine.run(.sync, snapshot: access.snapshot, viewport: viewport)
+        access.listed = false
+        _ = await engine.run(.sync, snapshot: access.snapshot, viewport: viewport)
+        let result = await engine.run(.stop, snapshot: access.snapshot, viewport: viewport)
+        #expect(result.pendingRestorations == 0)
         #expect(access.current == access.original)
     }
 

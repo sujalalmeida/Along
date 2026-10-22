@@ -29,6 +29,37 @@ protocol WindowAccessibility: Sendable {
     func focus(_ window: AXUIElement, pid: pid_t) throws
 }
 
+extension WindowAccessibility {
+    /// Off-screen windows can have their size clamped before they are moved back
+    /// onto a display. Give the app a bounded opportunity to apply both changes.
+    func restoreFrame(_ window: AXUIElement, to original: CGRect) throws -> Bool {
+        var failure: Error = WindowAccessError.constrained
+        for attempt in 0..<3 {
+            do {
+                guard try isMovable(window) else { return false }
+                let current = try frame(of: window)
+                if current.isClose(to: original) { return true }
+                if attempt != 1 {
+                    try move(window, to: original.origin)
+                    try place(window, at: original, from: try frame(of: window))
+                } else {
+                    // Some apps need the opposite order to release a size constraint.
+                    try place(window, at: original, from: current)
+                }
+                Thread.sleep(forTimeInterval: 0.03)
+                if try frame(of: window).isClose(to: original) { return true }
+                failure = WindowAccessError.constrained
+            } catch let error as WindowAccessError where error.windowClosed {
+                throw error
+            } catch {
+                failure = error
+            }
+            if attempt < 2 { Thread.sleep(forTimeInterval: 0.04) }
+        }
+        throw failure
+    }
+}
+
 struct SystemWindowAccessibility: WindowAccessibility {
     var isTrusted: Bool { AXIsProcessTrusted() }
 

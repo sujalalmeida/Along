@@ -74,13 +74,7 @@ final class RowWindowEngine: @unchecked Sendable {
         originals.removeAll { !snapshot.runningPIDs.contains($0.pid) }
         originals = originals.filter { record in
             do {
-                let current = try accessibility.frame(of: record.window)
-                guard try accessibility.isMovable(record.window) else { return true }
-                try accessibility.place(record.window, at: record.frame, from: current)
-                guard try accessibility.frame(of: record.window).isClose(to: record.frame) else {
-                    throw WindowAccessError.constrained
-                }
-                return false
+                return try !accessibility.restoreFrame(record.window, to: record.frame)
             } catch let error as WindowAccessError where error.windowClosed {
                 return false
             } catch {
@@ -130,9 +124,20 @@ final class RowWindowEngine: @unchecked Sendable {
                 transientFailure = true
                 continue
             }
-            // Only prune after a successful enumeration; a timeout is not a closed window.
+            // AXWindows can omit a live window temporarily. Only an invalid AX
+            // reference or a terminated process proves its original is obsolete.
             originals.removeAll { original in
-                original.pid == pid && !windows.contains { CFEqual($0, original.window) }
+                guard original.pid == pid, !windows.contains(where: { CFEqual($0, original.window) }) else {
+                    return false
+                }
+                do {
+                    _ = try accessibility.frame(of: original.window)
+                    return false
+                } catch let error as WindowAccessError {
+                    return error.windowClosed
+                } catch {
+                    return false
+                }
             }
             var focused: AXUIElement?
             if pid == snapshot.frontmostPID {
