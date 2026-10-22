@@ -18,6 +18,7 @@ struct RowSnapshot: Sendable {
 struct RowResult: Sendable {
     let message: String
     var needsScan = false
+    var scanInterrupted = false
     var pendingRestorations = 0
 }
 
@@ -104,15 +105,17 @@ final class RowWindowEngine: @unchecked Sendable {
         logger.debug("Window operation failed: \(String(describing: error), privacy: .public)")
     }
 
-    private func synchronize(snapshot: RowSnapshot, viewport: CGRect) -> (dirty: Bool, failed: Bool) {
+    private func synchronize(snapshot: RowSnapshot, viewport: CGRect, revision: UInt64)
+        -> (dirty: Bool, failed: Bool, interrupted: Bool)
+    {
         var dirty = false
         var transientFailure = false
-        unavailable.removeAll(keepingCapacity: true)
         originals.removeAll { !snapshot.runningPIDs.contains($0.pid) }
         let pids = Set(snapshot.visible.map(\.pid) + records.map(\.pid) + originals.map(\.pid))
         var alive = Set<Int>()
         var focusedID: Int?
         for pid in pids.sorted() where snapshot.eligiblePIDs.contains(pid) {
+            if motion.current() != revision { return (dirty, transientFailure, true) }
             let app = accessibility.application(pid: pid)
             let windows: [AXUIElement]
             do { windows = try accessibility.windows(of: app) } catch {
@@ -124,10 +127,13 @@ final class RowWindowEngine: @unchecked Sendable {
                 transientFailure = true
                 continue
             }
+            if motion.current() != revision { return (dirty, transientFailure, true) }
             // AXWindows can omit a live window temporarily. Only an invalid AX
             // reference or a terminated process proves its original is obsolete.
             originals.removeAll { original in
-                guard original.pid == pid, !windows.contains(where: { CFEqual($0, original.window) }) else {
+                guard motion.current() == revision, original.pid == pid,
+                    !windows.contains(where: { CFEqual($0, original.window) })
+                else {
                     return false
                 }
                 do {
@@ -139,6 +145,7 @@ final class RowWindowEngine: @unchecked Sendable {
                     return false
                 }
             }
+            if motion.current() != revision { return (dirty, transientFailure, true) }
             var focused: AXUIElement?
             if pid == snapshot.frontmostPID {
                 do { focused = try accessibility.focusedWindow(of: app) } catch {
@@ -147,10 +154,12 @@ final class RowWindowEngine: @unchecked Sendable {
                 }
             }
             for window in windows {
+                if motion.current() != revision { return (dirty, transientFailure, true) }
                 let known = records.firstIndex { CFEqual($0.window, window) }
                 let rect: CGRect
                 do {
                     rect = try accessibility.frame(of: window)
+                    if motion.current() != revision { return (dirty, transientFailure, true) }
                     guard try accessibility.isMovable(window) else { continue }
                 } catch let error as WindowAccessError where error.windowClosed {
                     continue
@@ -166,6 +175,7 @@ final class RowWindowEngine: @unchecked Sendable {
                 let id: Int
                 if let known {
                     id = records[known].id
+                    unavailable.remove(id)
                     if let applied = records[known].lastApplied, abs(applied.width - rect.width) > 3 {
                         row.resize(id: id, width: rect.width)
                         dirty = true
@@ -190,17 +200,21 @@ final class RowWindowEngine: @unchecked Sendable {
                 if let focused, CFEqual(focused, window) { focusedID = id }
             }
         }
+        // An interrupted scan has not visited every record. Never treat those
+        // unvisited windows as closed or discard their restoration history.
+        if motion.current() != revision { return (dirty, transientFailure, true) }
         for record in records where !alive.contains(record.id) {
             row.remove(id: record.id)
             dirty = true
         }
         records.removeAll { !alive.contains($0.id) }
+        unavailable.formIntersection(alive)
         if let focusedID, focusedID != lastFocused {
             row.focus(id: focusedID)
             dirty = true
         }
         lastFocused = focusedID
-        return (dirty, transientFailure)
+        return (dirty, transientFailure, false)
     }
 
     private struct MotionTarget {
@@ -330,7 +344,10 @@ final class RowWindowEngine: @unchecked Sendable {
         var transientFailure = false
 
         if case .sync = command {
-            let discovery = synchronize(snapshot: snapshot, viewport: viewport)
+            let discovery = synchronize(snapshot: snapshot, viewport: viewport, revision: revision)
+            if discovery.interrupted {
+                return RowResult(message: "Updating windows…", needsScan: true, scanInterrupted: true)
+            }
             dirty = dirty || discovery.dirty
             transientFailure = discovery.failed
         }

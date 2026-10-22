@@ -14,13 +14,19 @@ final class NavigationAccessibility: WindowAccessibility, @unchecked Sendable {
     var placements = 0
     var moves = 0
     var onMove: (@Sendable () -> Void)?
+    var onFrameRead: (@Sendable () -> Void)?
+    var onEnumeration: (@Sendable () -> Void)?
     var isTrusted: Bool { true }
     func application(pid: pid_t) -> AXUIElement { app }
-    func windows(of app: AXUIElement) throws -> [AXUIElement] { windows }
+    func windows(of app: AXUIElement) throws -> [AXUIElement] {
+        onEnumeration?()
+        return windows
+    }
     func focusedWindow(of app: AXUIElement) throws -> AXUIElement? { windows[focused] }
     func index(_ window: AXUIElement) -> Int { windows.firstIndex { CFEqual($0, window) }! }
     func frame(of window: AXUIElement) throws -> CGRect {
         frameReads += 1
+        onFrameRead?()
         return frames[index(window)]
     }
     func isMovable(_ window: AXUIElement) throws -> Bool { true }

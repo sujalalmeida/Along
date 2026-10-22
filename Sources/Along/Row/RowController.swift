@@ -196,6 +196,7 @@ final class RowController: ObservableObject {
             if enabled && generation == requestGeneration {
                 if message != result.message { message = result.message }
                 busy = false
+                if result.scanInterrupted { pendingSync = true }
                 let steps = pending.take()
                 if steps != 0 {
                     send(.step(steps))
@@ -209,7 +210,9 @@ final class RowController: ObservableObject {
                 } else if pendingResize {
                     pendingResize = false
                     send(.resize)
-                } else if pendingSync || (result.needsScan && Date().timeIntervalSince(lastScan) > 0.4) {
+                } else if scrollTask == nil
+                    && (pendingSync || (result.needsScan && Date().timeIntervalSince(lastScan) > 0.4))
+                {
                     pendingSync = false
                     send(.sync)
                 }
