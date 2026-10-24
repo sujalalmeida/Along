@@ -39,6 +39,7 @@ Record the machine, OS version, artifact checksum, and results in release notes.
 4. Update the README release status to match the published version. Paste the release notes and attach the DMG, ZIP, `SHA256SUMS.txt`, `INSTALL.txt`, `LICENSE`, and `release.json`.
 5. Tell users: **Apple Silicon; macOS 13+; ad-hoc signed; not notarized.** Include the first-launch and Accessibility instructions.
 6. Download the uploaded artifact once and verify its checksum.
+7. Update `Casks/along.rb` with the published version and the SHA-256 of the ZIP, then commit and push it. Run `brew update` and `brew fetch --cask sujalalmeida/along/along` to verify the Homebrew download. Keep the cask pinned to the exact archive; do not use `sha256 :no_check`.
 
 No publishing or GitHub release creation is performed by the packaging script. The website can later link directly to the DMG release asset.
 

@@ -30,6 +30,30 @@ These are **preview builds**, ad-hoc signed and **not notarized by Apple**. macO
 
 Enable **Along** in Privacy & Security → **Accessibility**, called **Device Control and Data Access** on newer macOS. Grant access to the installed copy in Applications.
 
+### Homebrew
+
+With [Homebrew](https://brew.sh) installed:
+
+```sh
+brew tap sujalalmeida/along https://github.com/sujalalmeida/Along.git
+brew install --cask sujalalmeida/along/along
+```
+
+Open Along from Applications and enable Accessibility as described above. This uses the project's own tap; Along is not in Homebrew's official cask repository. Homebrew does not remove the first-launch approval requirement.
+
+For updates, quit Along, then run:
+
+```sh
+brew update
+brew upgrade --cask sujalalmeida/along/along
+```
+
+To uninstall through Homebrew:
+
+```sh
+brew uninstall --cask sujalalmeida/along/along
+```
+
 ## Build from source
 
 You'll need Swift 6 through Xcode or Command Line Tools. Packaging also needs Python 3.10 or later. No third-party libraries are linked into the app.
