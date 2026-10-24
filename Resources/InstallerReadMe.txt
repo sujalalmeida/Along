@@ -1,4 +1,4 @@
-Along 0.7.0
+Along 0.7.1
 Your windows, in one scrolling row.
 
 INSTALL

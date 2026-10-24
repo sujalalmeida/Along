@@ -1,6 +1,6 @@
 # Releasing Along
 
-Current candidate: **Along 0.7.0 preview**, Apple Silicon only, macOS 13+.
+Current candidate: **Along 0.7.1 preview**, Apple Silicon only, macOS 13+.
 
 ## Prepare
 
@@ -34,7 +34,7 @@ Record the machine, OS version, artifact checksum, and results in release notes.
 ## Publish manually after testing
 
 1. Commit and push the source you want to release. Build the final package from that clean commit with `REQUIRE_CLEAN_SOURCE=1 ./Scripts/package-release.sh`.
-2. Create a GitHub release with a matching version tag, `v0.7.0`. Keep the historical TileMe `v0.6.0` assets unchanged.
+2. Create a GitHub release with a matching version tag, `v0.7.1`. Keep the historical TileMe `v0.6.0` assets unchanged.
 3. Mark it **pre-release** until fresh-install testing is complete.
 4. Update the README release status to match the published version. Paste the release notes and attach the DMG, ZIP, `SHA256SUMS.txt`, `INSTALL.txt`, `LICENSE`, and `release.json`.
 5. Tell users: **Apple Silicon; macOS 13+; ad-hoc signed; not notarized.** Include the first-launch and Accessibility instructions.

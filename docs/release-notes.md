@@ -1,12 +1,9 @@
-# Along 0.7.0 preview
+# Along 0.7.1 preview
 
-TileMe is now Along. This release keeps the same scrolling row workflow and adds better recovery when an app stops responding or refuses to restore its windows.
-
-- Along branding in the app, installer, and download filenames.
-- Retry restoring windows without losing the saved original positions.
-- Wait for restoration before quitting; choose whether to quit if some windows still cannot be restored.
-- Retry layout after a temporarily unavailable window becomes responsive again.
-- Clearer reporting of failed window operations.
+- Move windows back to their original positions before restoring their size on quit, with retries for apps that respond slowly.
+- Keep original positions when an app temporarily omits a window from its window list.
+- Reduce repeated window reads and resize requests during keyboard navigation.
+- Let keyboard shortcuts interrupt background window scans.
 
 ## Requirements and installation
 

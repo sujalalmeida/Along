@@ -56,7 +56,7 @@ For a public release, use `REQUIRE_CLEAN_SOURCE=1 ./Scripts/package-release.sh`;
 To verify an app manually:
 
 ```sh
-./Scripts/verify-release.sh /path/to/Along.app 0.7.0
+./Scripts/verify-release.sh /path/to/Along.app 0.7.1
 ```
 
 ## Signing

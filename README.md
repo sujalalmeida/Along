@@ -22,7 +22,7 @@ Along lives in the menu bar. It works with your actual app windows.
 
 **Apple Silicon (M1 or newer), macOS 13 or later.** Intel Macs aren't supported.
 
-[**Download Along 0.7.0 for Apple Silicon**](https://github.com/sujalalmeida/Along/releases/download/v0.7.0/Along-0.7.0-apple-silicon.dmg)
+[**Download Along 0.7.1 for Apple Silicon**](https://github.com/sujalalmeida/Along/releases/download/v0.7.1/Along-0.7.1-apple-silicon.dmg)
 
 Along downloads use the filename `Along-<version>-apple-silicon.dmg` on the [Releases page](https://github.com/sujalalmeida/Along/releases). Open the DMG, drag **Along** into **Applications**, eject the disk image, and open the installed app. A ZIP is also included with each release.
 
